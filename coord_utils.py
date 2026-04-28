@@ -6,6 +6,7 @@
 
 import re
 from logger_config import logger
+from pyproj import Transformer
 
 
 def parse_coordinate(coord_str):
@@ -157,11 +158,7 @@ def build_bbox(point1, point2):
     
     Возвращает:
         tuple: (west, south, east, north) в порядке, который ожидает API СКДФ
-            - west  (запад)   = минимальная долгота (самая левая точка)
-            - south (юг)      = минимальная широта (самая нижняя точка)
-            - east  (восток)  = максимальная долгота (самая правая точка)
-            - north (север)   = максимальная широта (самая верхняя точка)
-    
+
     Пример:
         point1 = (55.91, 37.73)  # северо-запад
         point2 = (55.86, 37.71)  # юго-восток
@@ -185,18 +182,39 @@ def build_bbox(point1, point2):
     
     return west, south, east, north
 
+def convert_bbox_to_skdf(bbox_4326):
+    """
+    Переводит bbox из градусов (EPSG:4326) в метры (EPSG:3857) для API СКДФ.
+    Возвращает [xmin, ymin, xmax, ymax] в метрах.
+    """
+    
+    transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
+    west, south, east, north = bbox_4326
+    
+    xmin, ymin = transformer.transform(west, south)
+    xmax, ymax = transformer.transform(east, north)
+    
+    logger.debug(f"Bbox в метрах: xmin={xmin}, ymin={ymin}, xmax={xmax}, ymax={ymax}")
+    
+    return [xmin, ymin, xmax, ymax]
+
+
 
 # ============= ТЕСТЫ =============
 if __name__ == "__main__":
     print("\n=== Тест координат ===\n")
     
-    # Тест 1: Яндекс.Карты (должно определить правильно)
-    test_input = "55.972483, 36.911828"
-    lat, lon = parse_coordinate(test_input)
-    print(f"Вход: {test_input}")
-    print(f"Результат: широта={lat}, долгота={lon}\n")
+    # Ввод двух точек
+    print("Введите первую точку (северо-запад):")
+    lat1, lon1 = parse_coordinate(input())
     
-    # Тест 2: Ручной ввод пользователя
-    user_input = input("Введите координаты: ")
-    lat, lon = parse_coordinate(user_input)
-    print(f"Результат: широта={lat}, долгота={lon}")
+    print("Введите вторую точку (юго-восток):")
+    lat2, lon2 = parse_coordinate(input())
+    
+    # Строим bbox
+    bbox = build_bbox((lat1, lon1), (lat2, lon2))
+    print(f"Bbox (west, south, east, north): {bbox}")
+    
+    # Конвертируем в метры для СКДФ
+    bbox_skdf = convert_bbox_to_skdf(bbox)
+    print(f"Bbox в метрах: {bbox_skdf}")

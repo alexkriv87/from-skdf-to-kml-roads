@@ -5,5 +5,8 @@ output/
 *.pyc 
 logs/ 
 .vscode/ 
-
 tempCodeRunnerFile.py 
+get_bridge_table.py
+get_road_data_from_SKDF.py
+get_skdf_bridges.py
+test_first_file.py
