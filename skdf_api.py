@@ -8,6 +8,7 @@
 import requests
 import time
 from logger_config import logger
+from config import REQUEST_TIMEOUT, MAX_RETRIES
 
 # Константы API
 BASE_URL = "https://xn--d1aluo.xn--p1ai"  # Адрес API (punycode для скдф.рф)
@@ -22,10 +23,6 @@ HEADERS_PASSPORT = {
     "Content-Type": "application/json",
     "Content-Profile": "query_api"           # Для запросов паспортов
 }
-
-# Настройки повторных попыток
-REQUEST_TIMEOUT = 10      # Таймаут на запрос в секундах
-MAX_RETRIES = 1           # Количество повторов при ошибке (всего 2 попытки)
 
 
 def _make_request_with_retry(method, url, **kwargs):
@@ -184,7 +181,7 @@ def get_road_characteristics(passport_id):
         if d.get('length'):
             characteristics['длина_паспорт'] = d['length']
         
-        # Ограничение скорости (одно значение, но может быть несколько)
+        # Ограничение скорости (все значения)
         if d.get('speed_limit'):
             speeds = [str(s) for s in d['speed_limit']]
             characteristics['скорость'] = ', '.join(speeds)
