@@ -210,8 +210,8 @@ if __name__ == "__main__":
     
     print("\n=== Тест skdf_api.py ===\n")
     
-    # Координаты из coord_utils.py (Свободный, bbox в метрах)
-    test_bbox = [14215755.537897442, 6660090.979195764, 14296014.416992927, 6720328.170348525]
+    # Координаты из coord_utils.py (Ухта, bbox в метрах)
+    test_bbox = [5977746.526608107, 9236942.652847864, 5979323.042513346, 9238789.165837372]
     
     # Тест 1: get_roads_in_bbox
     start_time = time.time()
@@ -248,3 +248,12 @@ if __name__ == "__main__":
             print(f"Характеристики: {chars}")
         else:
             print("\nНет passport_id, пропускаем тест характеристик")
+        print("\n=== Уникальные значения value_of_the_road ===")
+        
+        
+        unique_values = {r['properties'].get('value_of_the_road') for r in roads}
+        for val in sorted(unique_values):  # sorted для удобства просмотра
+            print(f"  - {val}")
+        
+        for road in roads[:5]:
+            print(road['properties'].get('value_of_the_road', 'НЕТ ЗНАЧЕНИЯ'))

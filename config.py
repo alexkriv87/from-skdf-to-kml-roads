@@ -5,13 +5,6 @@
 # Цвета дорог по принадлежности (формат HEX)
 # Справочник: https://www.rapidtables.com/web/color/RGB_Color.html
 
-COLORS = {
-    "федеральная": "#8B4513",    # Коричневый (SaddleBrown)
-    "региональная": "#00BFFF",   # Голубой (DeepSkyBlue)
-    "местная": "#8A2BE2",        # Фиолетовый (BlueViolet)
-    "не определена": "#888888"   # Серый
-}
-
 # ID стилей для KML
 STYLE_IDS = {
     "федеральная": "style_federal",
@@ -22,14 +15,14 @@ STYLE_IDS = {
 
 # Цвета в формате KML (AABBGGRR, FF = непрозрачный)
 COLORS_KML = {
-    "style_federal": "FF8B4513",   # коричневый
-    "style_regional": "FF00BFFF",  # голубой
-    "style_local": "FF8A2BE2",     # фиолетовый
-    "style_unknown": "FF888888"    # серый
+    "style_federal": "FF53A9FF",   # RGB(255,169,83) - оранжево-коричневый
+    "style_regional": "FFFFECCC",  # RGB(204,236,255) - бледно-голубой
+    "style_local": "FFCCCCFF",     # RGB(255,204,204) - бледно-розовый
+    "style_unknown": "FF888888",   # Серый
 }
 
 # Толщина линии для всех дорог (в пикселях)
-LINE_WIDTH = 6
+LINE_WIDTH = 5
 
 # ============= НАСТРОЙКИ API =============
 # Уровень детализации по умолчанию
@@ -74,4 +67,5 @@ DESCRIPTION_TEMPLATE = [
     ("длина_паспорт", "Протяженность (паспорт):"),
     ("скорость", "Максимальная скорость:"),
     ("владелец", "Принадлежность:"),
+   # ("skeleton", "Skeleton:"), не понятно что за атрибут   
 ]

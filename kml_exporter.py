@@ -1,7 +1,6 @@
 # kml_exporter.py
 # Модуль для экспорта дорог в KML-файл
 
-import os
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from logger_config import logger
@@ -9,7 +8,7 @@ from config import COLORS_KML, LINE_WIDTH, STYLE_IDS, ALL_FOLDERS, DESCRIPTION_T
 from geometry_funcs import convert_multilinestring
 
 
-def get_folder_name(ownership):
+def _get_folder_name(ownership):
     """
     Определяет имя папки для дороги по её принадлежности.
     
@@ -37,7 +36,7 @@ def get_folder_name(ownership):
         return None
 
 
-def get_style_id(ownership):
+def _get_style_id(ownership):
     """
     Возвращает ID стиля по принадлежности дороги.
     
@@ -59,7 +58,7 @@ def get_style_id(ownership):
         return STYLE_IDS["не определена"]
 
 
-def build_description(road):
+def _build_description(road):
     """
     Формирует текст description для дороги.
     
@@ -71,11 +70,6 @@ def build_description(road):
     """
     lines = []
     
-    # Название дороги
-    name = road.get('road_name', 'Без названия')
-    lines.append(f"Название: {name}")
-    lines.append("")  # пустая строка для разделения
-    
     # Характеристики из шаблона
     for field_key, field_label in DESCRIPTION_TEMPLATE:
         value = road.get(field_key)
@@ -85,7 +79,7 @@ def build_description(road):
     return '\n'.join(lines)
 
 
-def add_style(doc, style_id, color):
+def _add_style(doc, style_id, color):
     """
     Добавляет стиль LineStyle в документ KML.
     
@@ -102,20 +96,7 @@ def add_style(doc, style_id, color):
     width.text = str(LINE_WIDTH)
 
 
-def add_folder(doc, folder_name):
-    """
-    Добавляет пустую папку в документ KML.
-    
-    Параметры:
-        doc: элемент Document
-        folder_name: имя папки
-    """
-    folder = ET.SubElement(doc, "Folder")
-    name = ET.SubElement(folder, "name")
-    name.text = folder_name
-
-
-def add_road_to_kml(parent, road):
+def _add_road_to_kml(parent, road):
     """
     Добавляет дорогу как Placemark в указанный элемент (Folder).
     
@@ -125,17 +106,17 @@ def add_road_to_kml(parent, road):
     """
     placemark = ET.SubElement(parent, "Placemark")
     
-    # Название
+    # Название (из properties)
     name = ET.SubElement(placemark, "name")
-    name.text = road.get('road_name', 'Без названия')
+    name.text = road.get('properties', {}).get('road_name', 'Без названия')
     
     # Описание
     description = ET.SubElement(placemark, "description")
-    description.text = build_description(road)
+    description.text = _build_description(road)
     
-    # Стиль
-    ownership = road.get('value_of_the_road', '')
-    style_id = get_style_id(ownership)
+    # Стиль (из properties)
+    ownership = road.get('properties', {}).get('value_of_the_road', '')
+    style_id = _get_style_id(ownership)
     style_url = ET.SubElement(placemark, "styleUrl")
     style_url.text = f"#{style_id}"
     
@@ -157,7 +138,7 @@ def add_road_to_kml(parent, road):
             
             coordinates.text = ' '.join(coord_lines)
         except Exception as e:
-            logger.warning(f"Ошибка конвертации геометрии для дороги {road.get('road_name')}: {e}")
+            logger.warning(f"Ошибка конвертации геометрии для дороги {road.get('properties', {}).get('road_name', 'неизвестной')}: {e}")
 
 
 def save_to_kml(roads, output_path):
@@ -178,7 +159,7 @@ def save_to_kml(roads, output_path):
         
         # Добавляем стили
         for style_id, color in COLORS_KML.items():
-            add_style(document, style_id, color)
+            _add_style(document, style_id, color)
         
         # Создаём основную папку "Дороги"
         main_folder = ET.SubElement(document, "Folder")
@@ -195,14 +176,13 @@ def save_to_kml(roads, output_path):
         
         # Раскладываем дороги по папкам
         for road in roads:
-            ownership = road.get('value_of_the_road', '')
-            folder_name = get_folder_name(ownership)
+            ownership = road.get('properties', {}).get('value_of_the_road', '')
+            folder_name = _get_folder_name(ownership)
             
             if folder_name and folder_name in folders:
-                add_road_to_kml(folders[folder_name], road)
+                _add_road_to_kml(folders[folder_name], road)
             else:
-                # Если папка не определена, кладём в основную папку
-                add_road_to_kml(main_folder, road)
+                _add_road_to_kml(main_folder, road)
         
         # Создаём папку "Точки интереса" (пока пустую)
         poi_folder = ET.SubElement(document, "Folder")
@@ -228,8 +208,8 @@ if __name__ == "__main__":
     
     print("\n=== Тест kml_exporter.py ===\n")
     
-    # Координаты из coord_utils.py (Свободный, bbox в метрах)
-    test_bbox = [14215755.537897442, 6660090.979195764, 14296014.416992927, 6720328.170348525]
+    # Координаты из coord_utils.py (bbox в метрах)
+    test_bbox = [5977746.526608107, 9236942.652847864, 5979323.042513346, 9238789.165837372]
     
     # Загружаем все дороги
     print("Загрузка дорог из СКДФ...")
@@ -237,7 +217,7 @@ if __name__ == "__main__":
     roads = get_roads_in_bbox(test_bbox, zoom=14)
     elapsed_time = time.time() - start_time
     
-    print(f"\nВремя выполнения: {elapsed_time:.2f} сек")
+    print(f"Время выполнения: {elapsed_time:.2f} сек")
     print(f"Получено дорог: {len(roads)}")
     
     if not roads:
@@ -245,10 +225,7 @@ if __name__ == "__main__":
         exit()
     
     # Обогащаем все дороги характеристиками
-    print("\nОбогащение характеристиками...")
-    enriched_count = 0
-    no_passport_count = 0
-    
+    print("Обогащение характеристиками...")
     for i, road in enumerate(roads):
         road_id = road['properties'].get('road_id')
         if road_id:
@@ -256,26 +233,13 @@ if __name__ == "__main__":
             if passport_id:
                 chars = get_road_characteristics(passport_id)
                 road.update(chars)
-                enriched_count += 1
-            else:
-                no_passport_count += 1
-        
-        # Прогресс каждые 50 дорог
-        if (i + 1) % 50 == 0:
-            print(f"  Обработано {i + 1} из {len(roads)} дорог")
-    
-    print(f"\nОбогащено характеристиками: {enriched_count}")
-    print(f"Нет паспорта: {no_passport_count}")
     
     # Сохраняем в KML
-    from kml_exporter import save_to_kml
-    
-    output_file = f"roads_{time.strftime('%Y%m%d_%H%M%S')}.kml"
+    output_file = f"roads_{datetime.now().strftime('%Y%m%d_%H%M%S')}.kml"
     success = save_to_kml(roads, output_file)
     
     if success:
         print(f"\n✅ KML файл сохранён: {output_file}")
         print(f"   Всего дорог: {len(roads)}")
-        print(f"   Открой файл в Google Earth или SAS.Планет")
     else:
         print("\n❌ Ошибка сохранения KML")
