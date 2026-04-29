@@ -1,42 +1,47 @@
 # skdf_api.py
 # Модуль для работы с API СКДФ (Справочная карта дорог федерального значения)
 # Содержит функции для:
-# 1. Получения дорог по bounding box
+# 1. Получения дорог по bounding box (заполняет переданный GeoDataFrame)
 # 2. Получения passport_id по road_id
 # 3. Получения характеристик дороги по passport_id
+# 4. Создания пустого GeoDataFrame с правильной структурой
 
 import requests
 import time
+import pandas as pd
+import geopandas as gpd
+from shapely.geometry import shape
 from logger_config import logger
-from config import REQUEST_TIMEOUT, MAX_RETRIES
+from config import (
+    MAX_RETRIES, REQUEST_TIMEOUT, BASE_URL,
+    HEADERS_GEO, HEADERS_PASSPORT, GDF_SCHEMA
+)
 
-# Константы API
-BASE_URL = "https://xn--d1aluo.xn--p1ai"  # Адрес API (punycode для скдф.рф)
 
-# Заголовки для разных типов запросов
-HEADERS_GEO = {
-    "Content-Type": "application/json",
-    "Content-Profile": "gis_api_public"      # Для запросов геометрии
-}
-
-HEADERS_PASSPORT = {
-    "Content-Type": "application/json",
-    "Content-Profile": "query_api"           # Для запросов паспортов
-}
+def create_empty_gdf():
+    """
+    Создаёт пустой GeoDataFrame с правильной структурой (колонки + типы).
+    Колонка geometry добавляется отдельно.
+    
+    Возвращает:
+        GeoDataFrame: пустой gdf с заданной схемой
+    """
+    df = pd.DataFrame({
+        col: pd.Series(dtype=dtype) 
+        for col, dtype in GDF_SCHEMA.items()
+    })
+    
+    df['geometry'] = None
+    
+    gdf = gpd.GeoDataFrame(df, geometry='geometry', crs="EPSG:3857")
+    
+    return gdf
 
 
 def _make_request_with_retry(method, url, **kwargs):
     """
     Внутренняя функция для выполнения запроса с повторами.
     Вызывается только внутри этого модуля.
-    
-    Параметры:
-        method: 'GET' или 'POST'
-        url: адрес запроса
-        **kwargs: дополнительные параметры (json, headers и т.д.)
-    
-    Возвращает:
-        Response объект или None при ошибке
     """
     for attempt in range(MAX_RETRIES + 1):
         try:
@@ -64,17 +69,17 @@ def _make_request_with_retry(method, url, **kwargs):
     return None
 
 
-def get_roads_in_bbox(bbox_3857, zoom=14):
+def get_roads_in_bbox(bbox_3857, gdf, zoom=14):
     """
-    Запрашивает у API СКДФ все дороги в заданном прямоугольнике.
+    Заполняет переданный GeoDataFrame дорогами из СКДФ.
     
     Параметры:
         bbox_3857: [xmin, ymin, xmax, ymax] - границы в метрах (EPSG:3857)
+        gdf: GeoDataFrame (должен быть создан через create_empty_gdf)
         zoom: уровень детализации (6-18). По умолчанию 14.
     
     Возвращает:
-        list: список дорог (каждая дорога - Feature из GeoJSON)
-              или пустой список при ошибке
+        GeoDataFrame: заполненный gdf
     """
     url = f"{BASE_URL}/api-pg/rpc/get_road_lr_geobox"
     payload = {
@@ -89,14 +94,38 @@ def get_roads_in_bbox(bbox_3857, zoom=14):
     
     if response is None:
         logger.error("Не удалось получить дороги из СКДФ")
-        return []
+        return gdf
     
     data = response.json()
     features = data.get('features', [])
     
-    logger.info(f"Найдено дорог: {len(features)}")
+    if not features:
+        logger.error("API вернул пустой ответ (нет дорог в указанном квадрате).")
+        raise ValueError("API вернул пустой ответ. Проверьте область поиска или повторите запрос позже.")
     
-    return features
+    # Собираем все строки для добавления
+    rows_to_add = []
+    
+    for feature in features:
+        props = feature['properties']
+        geom = shape(feature['geometry'])
+        
+        # Создаём новую строку согласно схеме
+        new_row = {}
+        for col in GDF_SCHEMA.keys():
+            new_row[col] = props.get(col, None)
+        new_row['geometry'] = geom
+        
+        rows_to_add.append(new_row)
+    
+    # Добавляем все строки одной операцией
+    if rows_to_add:
+        new_rows_df = pd.DataFrame(rows_to_add)
+        gdf = pd.concat([gdf, new_rows_df], ignore_index=True)
+    
+    logger.info(f"Найдено дорог: {len(gdf)}")
+    
+    return gdf
 
 
 def get_passport_id(road_id):
@@ -109,6 +138,9 @@ def get_passport_id(road_id):
     Возвращает:
         int: passport_id или None, если не найден
     """
+    # Преобразуем numpy.int64 в обычный int
+    road_id = int(road_id)
+    
     url = f"{BASE_URL}/api-pg/rpc/f_get_approved_passport_id_by_object"
     payload = {
         "object_id": road_id,
@@ -162,47 +194,38 @@ def get_road_characteristics(passport_id):
     if 'data' in data:
         d = data['data']
         
-        # Категория дороги (все значения)
         if d.get('category'):
             categories = [c['name'] for c in d['category']]
             characteristics['категория'] = ', '.join(categories)
         
-        # Тип покрытия (все значения)
         if d.get('pavement_type'):
             pavements = [p['name'] for p in d['pavement_type']]
             characteristics['покрытие'] = ', '.join(pavements)
         
-        # Количество полос (все значения)
         if d.get('lanes'):
             lanes_list = [str(l) for l in d['lanes']]
             characteristics['полосы'] = ', '.join(lanes_list)
         
-        # Протяжённость дороги в км
         if d.get('length'):
             characteristics['длина_паспорт'] = d['length']
         
-        # Ограничение скорости (все значения)
         if d.get('speed_limit'):
             speeds = [str(s) for s in d['speed_limit']]
             characteristics['скорость'] = ', '.join(speeds)
         
-        # Владельцы дороги (все)
         if d.get('owner'):
             owners = [o['name'] for o in d['owner']]
             characteristics['владелец'] = ', '.join(owners)
         
-        # Пропускная способность (если есть)
         if d.get('capacity'):
             characteristics['пропускная'] = d['capacity'][0]
         
-        # Интенсивность движения (если есть)
         if d.get('traffic'):
             characteristics['интенсивность'] = d['traffic'][0]
     
     logger.debug(f"Получены характеристики: {list(characteristics.keys())}")
     
     return characteristics
-
 
 # ============= ТЕСТ =============
 if __name__ == "__main__":
@@ -213,47 +236,29 @@ if __name__ == "__main__":
     # Координаты из coord_utils.py (Ухта, bbox в метрах)
     test_bbox = [5977746.526608107, 9236942.652847864, 5979323.042513346, 9238789.165837372]
     
-    # Тест 1: get_roads_in_bbox
+    # Создаём пустой gdf
+    gdf = create_empty_gdf()
+    
+    # Заполняем дорогами
     start_time = time.time()
-    roads = get_roads_in_bbox(test_bbox, zoom=14)
+    gdf = get_roads_in_bbox(test_bbox, gdf, zoom=14)
     elapsed_time = time.time() - start_time
     
-    print(f"\nВремя выполнения: {elapsed_time:.2f} сек")
-    print(f"Получено дорог: {len(roads)}")
+    print(f"Время выполнения: {elapsed_time:.2f} сек")
+    print(f"Получено дорог: {len(gdf)}")
     
-    if roads:
-        # Находим самую длинную дорогу по геометрической длине
-        longest_road = max(roads, key=lambda r: r['properties'].get('geom_length', 0))
+    if len(gdf) > 0:
+        print("\n=== Содержимое GeoDataFrame ===")
         
-        print(f"\n=== Самая длинная дорога ===")
-        print(f"  Название: {longest_road['properties'].get('road_name')}")
-        print(f"  Геометрическая длина: {longest_road['properties'].get('geom_length')} км")
-        print(f"  Паспортная длина (из API): {longest_road['properties'].get('road_length')} км")
-        print(f"  road_id: {longest_road['properties'].get('road_id')}")
-        print(f"  road_part_id: {longest_road['properties'].get('road_part_id')}")
-        print(f"  Принадлежность: {longest_road['properties'].get('value_of_the_road')}")
+        # Выводим только нужные колонки для читаемости
+        display_cols = ['road_name', 'road_id', 'value_of_the_road', 'geom_length', 'road_length']
+        existing_cols = [col for col in display_cols if col in gdf.columns]
         
-        # Тест 2: get_passport_id для самой длинной дороги
-        print("\n=== Тест get_passport_id ===")
-        test_road_id = longest_road['properties']['road_id']
-        print(f"road_id: {test_road_id}")
-        
-        passport_id = get_passport_id(test_road_id)
-        print(f"passport_id: {passport_id}")
-        
-        # Тест 3: get_road_characteristics
-        if passport_id:
-            print("\n=== Тест get_road_characteristics ===")
-            chars = get_road_characteristics(passport_id)
-            print(f"Характеристики: {chars}")
-        else:
-            print("\nНет passport_id, пропускаем тест характеристик")
-        print("\n=== Уникальные значения value_of_the_road ===")
-        
-        
-        unique_values = {r['properties'].get('value_of_the_road') for r in roads}
-        for val in sorted(unique_values):  # sorted для удобства просмотра
-            print(f"  - {val}")
-        
-        for road in roads[:5]:
-            print(road['properties'].get('value_of_the_road', 'НЕТ ЗНАЧЕНИЯ'))
+        for idx, row in gdf.iterrows():
+            print(f"\n--- Дорога {idx + 1} ---")
+            for col in existing_cols:
+                value = row.get(col)
+                if value is not None:
+                    print(f"  {col}: {value}")
+    else:
+        print("Нет дорог для теста")
