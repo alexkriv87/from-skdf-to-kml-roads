@@ -10,7 +10,7 @@ import requests
 import time
 import pandas as pd
 import geopandas as gpd
-from shapely.geometry import shape
+from shapely.geometry import shape, box
 from logger_config import logger
 from config import (
     MAX_RETRIES, REQUEST_TIMEOUT, BASE_URL,
@@ -52,12 +52,12 @@ def _make_request_with_retry(method, url, **kwargs):
     return None
 
 
-def fetch_roads_raw(bbox_3857, zoom=14):
+def fetch_roads_raw(bbox_meters, zoom=14):
     """
     Запрашивает у API СКДФ дороги в заданном прямоугольнике.
 
     Параметры:
-        bbox_3857: [xmin, ymin, xmax, ymax] - границы в метрах (EPSG:3857)
+        bbox_meters: [xmin, ymin, xmax, ymax] - границы в метрах (EPSG:3857)
         zoom: уровень детализации (6-18). По умолчанию 14.
 
     Возвращает:
@@ -65,7 +65,7 @@ def fetch_roads_raw(bbox_3857, zoom=14):
     """
     url = f"{BASE_URL}/api-pg/rpc/get_road_lr_geobox"
     payload = {
-        "p_box": bbox_3857,
+        "p_box": bbox_meters,
         "p_scale_factor": 1,
         "p_zoom": zoom
     }
@@ -111,6 +111,18 @@ def features_to_gdf(features):
 
     return gdf
 
+def check_road_intersects_bbox(geometry, search_bbox):
+    """
+    Проверяет, пересекается ли геометрия дороги с поисковым bbox.
+    
+    Параметры:
+        geometry: Shapely-объект в EPSG:3857
+        search_bbox: полигон bbox (shapely.geometry.Polygon) в EPSG:3857
+    
+    Возвращает:
+        bool: True, если пересекается
+    """
+    return geometry.intersects(search_bbox)
 
 def get_passport_id(road_id):
     """
@@ -197,23 +209,51 @@ def get_road_characteristics(passport_id):
 
     return characteristics
 
+def get_folder_name(value_of_the_road):
+    """Определяет имя папки в KML по принадлежности дороги (федеральная/региональная/местная и т.д.)."""
+    folder_map = {
+        "федерального": "1. Федеральные дороги",
+        "регионального": "2. Региональные дороги",
+        "местного": "3. Местные дороги",
+        "частные": "4. Частные дороги",
+        "ведомственные": "5. Ведомственные",
+        "лесные": "6. Лесные дороги"
+    }
+    for key, folder in folder_map.items():
+        if key in value_of_the_road:
+            return folder
+    return None
+
 
 # ============= ТЕСТ =============
 if __name__ == "__main__":
-    test_bbox = [5977746.526608107, 9236942.652847864,
-                 5979323.042513346, 9238789.165837372]
+    from shapely.geometry import box
+    
+    test_bbox_meters = [5977746.526608107, 9236942.652847864,
+                        5979323.042513346, 9238789.165837372]
 
-    features = fetch_roads_raw(test_bbox, zoom=14)
+    # 1. Загружаем дороги
+    features = fetch_roads_raw(test_bbox_meters, zoom=14)
     gdf = features_to_gdf(features)
 
+    # 2. Создаём поисковый полигон
+    search_bbox = box(*test_bbox_meters)
+
+    # 3. Фильтруем ДО обогащения
+    gdf['intersects_bbox'] = gdf['geometry'].apply(
+        lambda geom: check_road_intersects_bbox(geom, search_bbox)
+    )
+    gdf = gdf[gdf['intersects_bbox']].copy()
+    print(f"После фильтрации: {len(gdf)} дорог")
+
+    # 4. Обогащаем только отфильтрованные дороги
     gdf['passport_id'] = gdf['road_id'].apply(get_passport_id)
     gdf['characteristics'] = gdf['passport_id'].apply(get_road_characteristics)
 
     chars_df = pd.DataFrame(gdf['characteristics'].to_list())
     gdf = pd.concat([gdf.drop(columns=['characteristics']), chars_df], axis=1)
 
-    # Выводим нужные колонки, включая is_checked
-    cols = ['road_name', 'value_of_the_road',
-            'категория', 'покрытие', 'полосы']
+    # 5. Выводим результат
+    cols = ['road_name', 'value_of_the_road', 'категория', 'покрытие', 'полосы']
     print(gdf[cols].to_string())
     print(gdf.columns)
