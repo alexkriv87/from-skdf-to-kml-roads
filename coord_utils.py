@@ -1,6 +1,26 @@
 # coord_utils.py
 # Модуль для работы с географическими координатами
-# Поддерживает два формата:
+
+# ============================================================================
+# ОСНОВНАЯ ЛОГИКА ПРЕОБРАЗОВАНИЙ:
+# ============================================================================
+# 1. Пользователь вводит координаты в ГРАДУСАХ (два формата):
+#    - Десятичные градусы: 55.972483, 36.911828 (Яндекс.Карты)
+#    - DMS (градусы/минуты/секунды): N51°43'15.9790" E121°07'42.0984" (SAS.Планет)
+#
+# 2. parse_coordinate() → преобразует в ДЕСЯТИЧНЫЕ ГРАДУСЫ (float)
+#
+# 3. build_bbox() → строит bbox_degrees (west, south, east, north) в ГРАДУСАХ
+#
+# 4. convert_bbox_to_skdf() → преобразует bbox_degrees в bbox_meters (МЕТРЫ, EPSG:3857)
+#    (метры нужны для API СКДФ и геометрических расчётов)
+#
+# 5. bbox_meters используется:
+#    - для запроса дорог к API СКДФ
+#    - для фильтрации дорог по пересечению с bbox
+# ============================================================================
+
+# Поддерживаемые форматы ввода:
 # 1. Десятичные градусы: 55.972483, 36.911828 (Яндекс.Карты)
 # 2. Градусы/минуты/секунды: N51°43'15.9790" E121°07'42.0984" (SAS.Планет)
 
@@ -182,14 +202,19 @@ def build_bbox(point1, point2):
     
     return west, south, east, north
 
-def convert_bbox_to_skdf(bbox_4326):
+
+def convert_bbox_to_skdf(bbox_degrees):
     """
     Переводит bbox из градусов (EPSG:4326) в метры (EPSG:3857) для API СКДФ.
-    Возвращает [xmin, ymin, xmax, ymax] в метрах.
-    """
     
+    Параметры:
+        bbox_degrees: (west, south, east, north) в градусах
+    
+    Возвращает:
+        list: [xmin, ymin, xmax, ymax] в метрах
+    """
     transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
-    west, south, east, north = bbox_4326
+    west, south, east, north = bbox_degrees
     
     xmin, ymin = transformer.transform(west, south)
     xmax, ymax = transformer.transform(east, north)
@@ -197,7 +222,6 @@ def convert_bbox_to_skdf(bbox_4326):
     logger.debug(f"Bbox в метрах: xmin={xmin}, ymin={ymin}, xmax={xmax}, ymax={ymax}")
     
     return [xmin, ymin, xmax, ymax]
-
 
 
 # ============= ТЕСТЫ =============
@@ -212,9 +236,9 @@ if __name__ == "__main__":
     lat2, lon2 = parse_coordinate(input())
     
     # Строим bbox
-    bbox = build_bbox((lat1, lon1), (lat2, lon2))
-    print(f"Bbox (west, south, east, north): {bbox}")
+    bbox_degrees = build_bbox((lat1, lon1), (lat2, lon2))
+    print(f"Bbox (west, south, east, north): {bbox_degrees}")
     
     # Конвертируем в метры для СКДФ
-    bbox_skdf = convert_bbox_to_skdf(bbox)
-    print(f"Bbox в метрах: {bbox_skdf}")
+    bbox_meters = convert_bbox_to_skdf(bbox_degrees)
+    print(f"Bbox в метрах: {bbox_meters}")
