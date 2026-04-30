@@ -224,36 +224,67 @@ def get_folder_name(value_of_the_road):
             return folder
     return None
 
-
-# ============= ТЕСТ =============
 if __name__ == "__main__":
+    import time
+    import pandas as pd
     from shapely.geometry import box
+    from coord_utils import parse_coordinate, build_bbox, convert_bbox_to_skdf
     
-    test_bbox_meters = [5977746.526608107, 9236942.652847864,
-                        5979323.042513346, 9238789.165837372]
-
+    print("\n=== Тест skdf_api.py ===\n")
+    
+    # ===== ЖЁСТКИЕ КООРДИНАТЫ для теста =====
+    lat1, lon1 = 51.43000002777777, 128.07111802777777   # северо-запад
+    lat2, lon2 = 51.40874844444444, 128.12141480555556   # юго-восток
+    print(f"Тестовые координаты: NW({lat1}, {lon1}), SE({lat2}, {lon2})")
+    
+    # Строим bbox
+    bbox_degrees = build_bbox((lat1, lon1), (lat2, lon2))
+    bbox_meters = convert_bbox_to_skdf(bbox_degrees)
+    print(f"Bbox: {bbox_degrees} -> {bbox_meters}")
+    
     # 1. Загружаем дороги
-    features = fetch_roads_raw(test_bbox_meters, zoom=14)
+    print("\n1. Загрузка дорог из СКДФ...")
+    features = fetch_roads_raw(bbox_meters, zoom=14)
     gdf = features_to_gdf(features)
-
-    # 2. Создаём поисковый полигон
-    search_bbox = box(*test_bbox_meters)
-
-    # 3. Фильтруем ДО обогащения
-    gdf['intersects_bbox'] = gdf['geometry'].apply(
-        lambda geom: check_road_intersects_bbox(geom, search_bbox)
-    )
-    gdf = gdf[gdf['intersects_bbox']].copy()
-    print(f"После фильтрации: {len(gdf)} дорог")
-
-    # 4. Обогащаем только отфильтрованные дороги
+    print(f"   Загружено: {len(gdf)} дорог")
+    print(f"   📊 ДО фильтрации: NaN в value_of_the_road = {gdf['value_of_the_road'].isna().sum()}")
+    
+    # 2. Фильтруем по bbox
+    print("\n2. Фильтрация по bbox...")
+    search_bbox = box(*bbox_meters)
+    gdf = gdf[gdf['geometry'].apply(lambda geom: geom.intersects(search_bbox))].copy()
+    print(f"   После фильтрации: {len(gdf)} дорог")
+    print(f"   📊 ПОСЛЕ фильтрации: NaN в value_of_the_road = {gdf['value_of_the_road'].isna().sum()}")
+    
+    # 3. Обогащаем характеристиками (ИСПРАВЛЕННЫЙ БЛОК)
+    print("\n3. Обогащение характеристиками...")
     gdf['passport_id'] = gdf['road_id'].apply(get_passport_id)
     gdf['characteristics'] = gdf['passport_id'].apply(get_road_characteristics)
-
+    
+    # Создаём DataFrame из характеристик
     chars_df = pd.DataFrame(gdf['characteristics'].to_list())
-    gdf = pd.concat([gdf.drop(columns=['characteristics']), chars_df], axis=1)
-
-    # 5. Выводим результат
+    
+    # Добавляем road_id в chars_df
+    chars_df['road_id'] = gdf['road_id'].values
+    
+    # Объединяем через merge
+    gdf = pd.merge(
+        gdf.drop(columns=['characteristics']), 
+        chars_df, 
+        on='road_id', 
+        how='left'
+    )
+    
+    print(f"   📊 ПОСЛЕ обогащения: NaN в value_of_the_road = {gdf['value_of_the_road'].isna().sum()}")
+    
+    # 4. Проверяем типы и наличие value_of_the_road
+    print("\n4. Анализ колонки value_of_the_road:")
+    print(f"   Тип данных: {gdf['value_of_the_road'].dtype}")
+    print(f"   Уникальные значения (включая NaN):")
+    print(gdf['value_of_the_road'].value_counts(dropna=False))
+    
+    # 5. Выводим результат (первые 5 дорог)
+    print("\n5. Результат (первые 5 дорог):")
     cols = ['road_name', 'value_of_the_road', 'категория', 'покрытие', 'полосы']
-    print(gdf[cols].to_string())
-    print(gdf.columns)
+    existing_cols = [c for c in cols if c in gdf.columns]
+    print(gdf[existing_cols].head().to_string())

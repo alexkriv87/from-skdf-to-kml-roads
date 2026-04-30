@@ -1,5 +1,5 @@
 # kml_exporter.py
-# Модуль для экспорта дорог в KML-файл
+# Модуль для экспорта GeoDataFrame в KML-файл
 
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -8,46 +8,13 @@ from config import COLORS_KML, LINE_WIDTH, STYLE_IDS, ALL_FOLDERS, DESCRIPTION_T
 from geometry_funcs import convert_multilinestring
 
 
-def _get_folder_name(ownership):
-    """
-    Определяет имя папки для дороги по её принадлежности.
-    
-    Параметры:
-        ownership: строка принадлежности (например, "Автомобильные дороги федерального значения")
-    
-    Возвращает:
-        str: имя папки (например, "1. Федеральные дороги") или None
-    """
-    ownership_lower = ownership.lower()
-    
-    if "федерального" in ownership_lower:
-        return "1. Федеральные дороги"
-    elif "регионального" in ownership_lower:
-        return "2. Региональные дороги"
-    elif "местного" in ownership_lower:
-        return "3. Местные дороги"
-    elif "частные" in ownership_lower:
-        return "4. Частные дороги"
-    elif "ведомственные" in ownership_lower:
-        return "5. Ведомственные"
-    elif "лесные" in ownership_lower:
-        return "6. Лесные дороги"
-    else:
-        return None
-
-
 def _get_style_id(ownership):
-    """
-    Возвращает ID стиля по принадлежности дороги.
+    """Возвращает ID стиля по принадлежности дороги."""
+    # Защита от NaN (на всякий случай, хотя теперь их быть не должно)
+    if ownership is None or (isinstance(ownership, float) and str(ownership) == 'nan'):
+        return STYLE_IDS["не определена"]
     
-    Параметры:
-        ownership: строка принадлежности
-    
-    Возвращает:
-        str: ID стиля (например, "style_federal")
-    """
-    ownership_lower = ownership.lower()
-    
+    ownership_lower = str(ownership).lower()
     if "федерального" in ownership_lower:
         return STYLE_IDS["федеральная"]
     elif "регионального" in ownership_lower:
@@ -58,36 +25,18 @@ def _get_style_id(ownership):
         return STYLE_IDS["не определена"]
 
 
-def _build_description(road):
-    """
-    Формирует текст description для дороги.
-    
-    Параметры:
-        road: словарь с данными дороги (properties + характеристики)
-    
-    Возвращает:
-        str: текст description
-    """
+def _build_description(row):
+    """Формирует текст description из строки GeoDataFrame."""
     lines = []
-    
-    # Характеристики из шаблона
     for field_key, field_label in DESCRIPTION_TEMPLATE:
-        value = road.get(field_key)
-        if value:
+        value = row.get(field_key)
+        if value and str(value) != 'nan':
             lines.append(f"{field_label} {value}")
-    
     return '\n'.join(lines)
 
 
 def _add_style(doc, style_id, color):
-    """
-    Добавляет стиль LineStyle в документ KML.
-    
-    Параметры:
-        doc: элемент Document
-        style_id: ID стиля
-        color: цвет в формате KML (AABBGGRR)
-    """
+    """Добавляет стиль LineStyle в документ KML."""
     style = ET.SubElement(doc, "Style", id=style_id)
     line_style = ET.SubElement(style, "LineStyle")
     color_elem = ET.SubElement(line_style, "color")
@@ -96,40 +45,36 @@ def _add_style(doc, style_id, color):
     width.text = str(LINE_WIDTH)
 
 
-def _add_road_to_kml(parent, road):
-    """
-    Добавляет дорогу как Placemark в указанный элемент (Folder).
-    
-    Параметры:
-        parent: элемент Folder, куда добавлять
-        road: словарь с данными дороги
-    """
+def _add_road_to_kml(parent, row):
+    """Добавляет дорогу как Placemark в указанный элемент Folder."""
     placemark = ET.SubElement(parent, "Placemark")
     
-    # Название (из properties)
+    # Название
     name = ET.SubElement(placemark, "name")
-    name.text = road.get('properties', {}).get('road_name', 'Без названия')
+    name.text = row.get('road_name', 'Без названия')
     
     # Описание
     description = ET.SubElement(placemark, "description")
-    description.text = _build_description(road)
+    description.text = _build_description(row)
     
-    # Стиль (из properties)
-    ownership = road.get('properties', {}).get('value_of_the_road', '')
+    # Стиль
+    ownership = row.get('value_of_the_road', '')
     style_id = _get_style_id(ownership)
     style_url = ET.SubElement(placemark, "styleUrl")
     style_url.text = f"#{style_id}"
     
     # Геометрия (конвертируем из метров в градусы)
-    geometry = road.get('geometry')
-    if geometry and geometry.get('type') == 'MultiLineString':
+    geometry = row.get('geometry')
+    if geometry:
         try:
-            coords_deg = convert_multilinestring(geometry)
+            # Преобразуем Shapely-геометрию в GeoJSON-подобный словарь
+            from shapely.geometry import mapping
+            geom_dict = mapping(geometry)
+            coords_deg = convert_multilinestring(geom_dict)
             
             line_string = ET.SubElement(placemark, "LineString")
             coordinates = ET.SubElement(line_string, "coordinates")
             
-            # Формируем строку координат: lon,lat,altitude
             coord_lines = []
             for line in coords_deg:
                 for point in line:
@@ -138,22 +83,21 @@ def _add_road_to_kml(parent, road):
             
             coordinates.text = ' '.join(coord_lines)
         except Exception as e:
-            logger.warning(f"Ошибка конвертации геометрии для дороги {road.get('properties', {}).get('road_name', 'неизвестной')}: {e}")
+            logger.warning(f"Ошибка конвертации геометрии для дороги {row.get('road_name', 'неизвестной')}: {e}")
 
 
-def save_to_kml(roads, output_path):
+def save_to_kml(gdf, output_path):
     """
-    Основная функция: сохраняет список дорог в KML-файл.
+    Сохраняет GeoDataFrame в KML-файл.
     
     Параметры:
-        roads: список дорог (каждая дорога — словарь)
+        gdf: GeoDataFrame с дорогами (CRS: EPSG:3857)
         output_path: полный путь к выходному файлу (.kml)
     
     Возвращает:
         bool: True при успехе, False при ошибке
     """
     try:
-        # Создаём корневой элемент KML
         kml = ET.Element("kml", xmlns="http://www.opengis.net/kml/2.2")
         document = ET.SubElement(kml, "Document")
         
@@ -174,22 +118,19 @@ def save_to_kml(roads, output_path):
             folder_name_elem.text = folder_name
             folders[folder_name] = folder
         
-        # Раскладываем дороги по папкам
-        for road in roads:
-            ownership = road.get('properties', {}).get('value_of_the_road', '')
-            folder_name = _get_folder_name(ownership)
-            
+        # Раскладываем дороги по папкам (используем колонку kml_folder, если есть)
+        for idx, row in gdf.iterrows():
+            folder_name = row.get('kml_folder')
             if folder_name and folder_name in folders:
-                _add_road_to_kml(folders[folder_name], road)
+                _add_road_to_kml(folders[folder_name], row)
             else:
-                _add_road_to_kml(main_folder, road)
+                _add_road_to_kml(main_folder, row)
         
         # Создаём папку "Точки интереса" (пока пустую)
         poi_folder = ET.SubElement(document, "Folder")
         poi_name = ET.SubElement(poi_folder, "name")
         poi_name.text = "Точки интереса"
         
-        # Записываем в файл
         tree = ET.ElementTree(kml)
         tree.write(output_path, encoding='utf-8', xml_declaration=True)
         
@@ -199,47 +140,81 @@ def save_to_kml(roads, output_path):
     except Exception as e:
         logger.error(f"Ошибка сохранения KML: {e}")
         return False
-
-
-# ============= ТЕСТ =============
+    
+    
+# ============= ТЕСТ kml_exporter.py =============
 if __name__ == "__main__":
     import time
-    from skdf_api import get_roads_in_bbox, get_passport_id, get_road_characteristics
+    import pandas as pd
+    from coord_utils import parse_coordinate, build_bbox, convert_bbox_to_skdf
+    from skdf_api import fetch_roads_raw, features_to_gdf, get_passport_id, get_road_characteristics, get_folder_name
+    from shapely.geometry import box
+    from kml_exporter import save_to_kml
+    from datetime import datetime
     
     print("\n=== Тест kml_exporter.py ===\n")
     
-    # Координаты из coord_utils.py (bbox в метрах)
-    test_bbox = [5977746.526608107, 9236942.652847864, 5979323.042513346, 9238789.165837372]
+    # Ручной ввод координат
+    print("Введите северо-западную точку (широта, долгота):")
+    lat1, lon1 = parse_coordinate(input())
     
-    # Загружаем все дороги
-    print("Загрузка дорог из СКДФ...")
-    start_time = time.time()
-    roads = get_roads_in_bbox(test_bbox, zoom=14)
-    elapsed_time = time.time() - start_time
+    print("Введите юго-восточную точку (широта, долгота):")
+    lat2, lon2 = parse_coordinate(input())
     
-    print(f"Время выполнения: {elapsed_time:.2f} сек")
-    print(f"Получено дорог: {len(roads)}")
+    # Строим bbox
+    bbox_degrees = build_bbox((lat1, lon1), (lat2, lon2))
+    bbox_meters = convert_bbox_to_skdf(bbox_degrees)
+    print(f"Bbox (градусы): {bbox_degrees}")
+    print(f"Bbox (метры): {bbox_meters}")
     
-    if not roads:
-        print("Нет дорог для экспорта")
-        exit()
+    total_start = time.time()
     
-    # Обогащаем все дороги характеристиками
-    print("Обогащение характеристиками...")
-    for i, road in enumerate(roads):
-        road_id = road['properties'].get('road_id')
-        if road_id:
-            passport_id = get_passport_id(road_id)
-            if passport_id:
-                chars = get_road_characteristics(passport_id)
-                road.update(chars)
+    # 1. Загрузка дорог
+    start = time.time()
+    features = fetch_roads_raw(bbox_meters, zoom=14)
+    gdf = features_to_gdf(features)
+    print(f"Загружено: {len(gdf)} дорог за {time.time()-start:.1f} сек")
     
-    # Сохраняем в KML
+    # 2. Фильтрация по bbox
+    start = time.time()
+    search_bbox = box(*bbox_meters)
+    gdf = gdf[gdf['geometry'].apply(lambda geom: geom.intersects(search_bbox))].copy()
+    print(f"После фильтрации: {len(gdf)} дорог за {time.time()-start:.1f} сек")
+    
+    # 3. Обогащение характеристиками
+    start = time.time()
+    gdf['passport_id'] = gdf['road_id'].apply(get_passport_id)
+    gdf['characteristics'] = gdf['passport_id'].apply(get_road_characteristics)
+    
+    # Создаём DataFrame из характеристик
+    chars_df = pd.DataFrame(gdf['characteristics'].to_list())
+    
+    # Добавляем road_id в chars_df
+    chars_df['road_id'] = gdf['road_id'].values
+    
+    # Объединяем через merge
+    gdf = pd.merge(
+        gdf.drop(columns=['characteristics']), 
+        chars_df, 
+        on='road_id', 
+        how='left'
+    )
+    print(f"Обогащение: {gdf['passport_id'].notna().sum()} / {len(gdf)} дорог за {time.time()-start:.1f} сек")
+    
+    # 4. Добавляем папки
+    gdf['kml_folder'] = gdf['value_of_the_road'].apply(get_folder_name)
+    
+    # 5. Сохраняем в KML
+    start = time.time()
     output_file = f"roads_{datetime.now().strftime('%Y%m%d_%H%M%S')}.kml"
-    success = save_to_kml(roads, output_file)
+    success = save_to_kml(gdf, output_file)
+    print(f"Сохранение KML: {time.time()-start:.1f} сек")
+    
+    total_time = time.time() - total_start
+    print(f"\n✅ Общее время: {total_time:.1f} сек")
     
     if success:
-        print(f"\n✅ KML файл сохранён: {output_file}")
-        print(f"   Всего дорог: {len(roads)}")
+        print(f"   KML файл: {output_file}")
+        print(f"   Всего дорог: {len(gdf)}")
     else:
-        print("\n❌ Ошибка сохранения KML")
+        print("   ❌ Ошибка сохранения KML")
