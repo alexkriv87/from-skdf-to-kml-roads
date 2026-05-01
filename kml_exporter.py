@@ -9,42 +9,127 @@ from geometry_funcs import convert_multilinestring
 
 
 # ============================================================================
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ОСНОВНАЯ ФУНКЦИЯ ЭКСПОРТА (API)
 # ============================================================================
 
-def _get_color_from_ownership(ownership):
+def save_to_kml(gdf, output_path, top_folder_name="СКДФ Дороги"):
     """
-    Возвращает цвет в формате KML (AABBGGRR) по принадлежности дороги.
+    Сохраняет GeoDataFrame в KML-файл (структура как у SAS.Планет).
+
+    Параметры:
+        gdf: GeoDataFrame с дорогами (CRS: EPSG:3857)
+        output_path: полный путь к выходному файлу (.kml)
+        top_folder_name: имя верхней папки-обёртки
+
+    Возвращает:
+        bool: True при успехе, False при ошибке
     """
-    ownership_lower = str(ownership).lower()
+    try:
+        kml = _build_kml_tree(gdf, top_folder_name)
+        _write_kml_file(kml, output_path)
+        logger.info(f"KML сохранён: {output_path}")
+        return True
 
-    if "федерального" in ownership_lower:
-        return COLORS_KML.get("style_federal", "FF53A9FF")
-    elif "регионального" in ownership_lower:
-        return COLORS_KML.get("style_regional", "FFFFECCC")
-    elif "местного" in ownership_lower:
-        return COLORS_KML.get("style_local", "FFCCCCFF")
-    else:
-        return COLORS_KML.get("style_unknown", "FF888888")
-
-
-def _build_description(row):
-    """Формирует текст description из строки GeoDataFrame."""
-    lines = []
-    for field_key, field_label in DESCRIPTION_TEMPLATE:
-        value = row.get(field_key)
-        if value and str(value) != 'nan':
-            lines.append(f"{field_label} {value}")
-    return '\n'.join(lines)
+    except Exception as e:
+        logger.error(f"Ошибка сохранения KML: {e}")
+        return False
 
 
-def _add_list_style(parent):
-    """Добавляет ListStyle в папку (check-список, как в SAS.Планет)."""
-    style = ET.SubElement(parent, "Style")
-    list_style = ET.SubElement(style, "ListStyle")
-    ET.SubElement(list_style, "listItemType").text = "check"
-    ET.SubElement(list_style, "bgColor").text = "00ffffff"
+# ============================================================================
+# ПОСТРОЕНИЕ KML-СТРУКТУРЫ
+# ============================================================================
 
+def _build_kml_tree(gdf, top_folder_name):
+    """
+    Строит ElementTree всей KML-структуры (без записи на диск).
+
+    Параметры:
+        gdf: GeoDataFrame с дорогами
+        top_folder_name: имя верхней папки-обёртки
+
+    Возвращает:
+        Element: корневой элемент kml
+    """
+    # 1. Создаём корневой элемент с namespace Google Earth
+    kml = ET.Element("kml", xmlns="http://earth.google.com/kml/2.2")
+    document = ET.SubElement(kml, "Document")
+
+    # 2. Создаём верхнюю папку-обёртку
+    top_folder = _add_folder(document, top_folder_name, "1")
+
+    # 3. Создаём папку "Дороги"
+    roads_folder = _add_folder(top_folder, "1. Дороги", "1")
+
+    # 4. Определяем соответствие value_of_the_road -> имя папки
+    folder_mapping = {
+        "федерального": "1. Федеральные",
+        "регионального": "2. Региональные",
+        "местного": "3. Местные",
+        "частные": "4. Частные",
+        "лесные": "5. Лесные",
+        "ведомственные": "6. Ведомственные"
+    }
+
+    # 5. Словарь для хранения созданных папок
+    folders = {}
+
+    # 6. Проходим по всем дорогам и раскладываем по папкам
+    for idx, row in gdf.iterrows():
+        ownership = row.get('value_of_the_road', '')
+        ownership_lower = str(ownership).lower()
+
+        # Определяем имя папки
+        folder_name = None
+        for key, name in folder_mapping.items():
+            if key in ownership_lower:
+                folder_name = name
+                break
+
+        # Если не определили - в "3. Местные" по умолчанию
+        if not folder_name:
+            folder_name = "3. Местные"
+
+        # Создаём папку, если ещё не создана
+        if folder_name not in folders:
+            folders[folder_name] = _add_folder(
+                roads_folder, folder_name, "1")
+
+        # Добавляем дорогу
+        _add_road_placemark(folders[folder_name], row)
+
+    # 7. Создаём недостающие пустые папки (для красоты)
+    all_needed_folders = ["1. Федеральные", "2. Региональные", "3. Местные",
+                          "4. Частные", "5. Лесные", "6. Ведомственные"]
+    for folder_name in all_needed_folders:
+        if folder_name not in folders:
+            _add_empty_folder(roads_folder, folder_name)
+
+    # 8. Создаём папку "4. Точки интереса" (пока пустую, как заготовку)
+    poi_folder = _add_folder(top_folder, "4. Точки интереса", "1")
+    _add_empty_folder(poi_folder, "Точки интереса")
+
+    return kml
+
+
+# ============================================================================
+# ЗАПИСЬ KML-ФАЙЛА НА ДИСК
+# ============================================================================
+
+def _write_kml_file(kml, output_path):
+    """
+    Записывает KML-дерево в файл.
+
+    Параметры:
+        kml: корневой элемент kml
+        output_path: полный путь к выходному файлу (.kml)
+    """
+    tree = ET.ElementTree(kml)
+    tree.write(output_path, encoding='utf-8', xml_declaration=True)
+
+
+# ============================================================================
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (в порядке вызова из основной)
+# ============================================================================
 
 def _add_folder(parent, name, open_state="1"):
     """
@@ -65,6 +150,14 @@ def _add_folder(parent, name, open_state="1"):
     return folder
 
 
+def _add_list_style(parent):
+    """Добавляет ListStyle в папку (check-список, как в SAS.Планет)."""
+    style = ET.SubElement(parent, "Style")
+    list_style = ET.SubElement(style, "ListStyle")
+    ET.SubElement(list_style, "listItemType").text = "check"
+    ET.SubElement(list_style, "bgColor").text = "00ffffff"
+
+
 def _add_road_placemark(parent, row):
     """
     Добавляет дорогу как Placemark с вложенным стилем (как в SAS.Планет).
@@ -72,14 +165,13 @@ def _add_road_placemark(parent, row):
     placemark = ET.SubElement(parent, "Placemark")
 
     # Название
-    name = ET.SubElement(placemark, "name")
-    name.text = row.get('road_name', 'Без названия')
+    ET.SubElement(placemark, "name").text = row.get(
+        'road_name', 'Без названия')
 
     # Описание
     description_text = _build_description(row)
     if description_text:
-        description = ET.SubElement(placemark, "description")
-        description.text = description_text
+        ET.SubElement(placemark, "description").text = description_text
 
     # Стиль (вложенный, как в SAS.Планет)
     style = ET.SubElement(placemark, "Style")
@@ -91,122 +183,68 @@ def _add_road_placemark(parent, row):
     ET.SubElement(line_style, "width").text = str(LINE_WIDTH)
 
     # Геометрия
-    geometry = row.get('geometry')
-    if geometry:
-        try:
-            from shapely.geometry import mapping
-            geom_dict = mapping(geometry)
-            coords_deg = convert_multilinestring(geom_dict)
+    _add_geometry(placemark, row.get('geometry'),
+                  row.get('road_name', 'неизвестной'))
 
-            line_string = ET.SubElement(placemark, "LineString")
-            ET.SubElement(line_string, "extrude").text = "1"
-            coordinates = ET.SubElement(line_string, "coordinates")
 
-            coord_lines = []
-            for line in coords_deg:
-                for point in line:
-                    lon, lat = point
-                    coord_lines.append(f"{lon},{lat},0")
+def _build_description(row):
+    """Формирует текст description из строки GeoDataFrame."""
+    lines = []
+    for field_key, field_label in DESCRIPTION_TEMPLATE:
+        value = row.get(field_key)
+        if value and str(value) != 'nan':
+            lines.append(f"{field_label} {value}")
+    return '\n'.join(lines)
 
-            coordinates.text = ' '.join(coord_lines)
-        except Exception as e:
-            logger.warning(
-                f"Ошибка конвертации геометрии для дороги {row.get('road_name', 'неизвестной')}: {e}")
+
+def _get_color_from_ownership(ownership):
+    """
+    Возвращает цвет в формате KML (AABBGGRR) по принадлежности дороги.
+    """
+    ownership_lower = str(ownership).lower()
+
+    if "федерального" in ownership_lower:
+        return COLORS_KML.get("style_federal", "FF53A9FF")
+    elif "регионального" in ownership_lower:
+        return COLORS_KML.get("style_regional", "FFFFECCC")
+    elif "местного" in ownership_lower:
+        return COLORS_KML.get("style_local", "FFCCCCFF")
+    else:
+        return COLORS_KML.get("style_unknown", "FF888888")
+
+
+def _add_geometry(placemark, geometry, road_name="неизвестной"):
+    """
+    Добавляет геометрию (LineString) в Placemark.
+    """
+    if not geometry:
+        return
+
+    try:
+        from shapely.geometry import mapping
+        geom_dict = mapping(geometry)
+        coords_deg = convert_multilinestring(geom_dict)
+
+        line_string = ET.SubElement(placemark, "LineString")
+        ET.SubElement(line_string, "extrude").text = "1"
+        coordinates = ET.SubElement(line_string, "coordinates")
+
+        coord_lines = []
+        for line in coords_deg:
+            for point in line:
+                lon, lat = point
+                coord_lines.append(f"{lon},{lat},0")
+
+        coordinates.text = ' '.join(coord_lines)
+
+    except Exception as e:
+        logger.warning(
+            f"Ошибка конвертации геометрии для дороги {road_name}: {e}")
 
 
 def _add_empty_folder(parent, name):
     """Создаёт пустую папку (для частных, лесных, ведомственных и т.д.)."""
-    folder = _add_folder(parent, name)
-    # Пустая папка без Placemark
-    return folder
-
-
-# ============================================================================
-# ОСНОВНАЯ ФУНКЦИЯ ЭКСПОРТА
-# ============================================================================
-
-def save_to_kml(gdf, output_path, top_folder_name="СКДФ Дороги"):
-    """
-    Сохраняет GeoDataFrame в KML-файл (структура как у SAS.Планет).
-
-    Параметры:
-        gdf: GeoDataFrame с дорогами (CRS: EPSG:3857)
-        output_path: полный путь к выходному файлу (.kml)
-        top_folder_name: имя верхней папки-обёртки
-
-    Возвращает:
-        bool: True при успехе, False при ошибке
-    """
-    try:
-        # Создаём корневой элемент с namespace Google Earth
-        kml = ET.Element("kml", xmlns="http://earth.google.com/kml/2.2")
-        document = ET.SubElement(kml, "Document")
-
-        # Создаём верхнюю папку-обёртку
-        top_folder = _add_folder(document, top_folder_name, "1")
-
-        # Создаём папку "Дороги"
-        roads_folder = _add_folder(top_folder, "1. Дороги", "1")
-
-        # Определяем соответствие value_of_the_road -> имя папки
-        folder_mapping = {
-            "федерального": "1. Федеральные",
-            "регионального": "2. Региональные",
-            "местного": "3. Местные",
-            "частные": "4. Частные",
-            "лесные": "5. Лесные",
-            "ведомственные": "6. Ведомственные"
-        }
-
-        # Словарь для хранения созданных папок
-        folders = {}
-
-        # Проходим по всем дорогам и раскладываем по папкам
-        for idx, row in gdf.iterrows():
-            ownership = row.get('value_of_the_road', '')
-            ownership_lower = str(ownership).lower()
-
-            # Определяем имя папки
-            folder_name = None
-            for key, name in folder_mapping.items():
-                if key in ownership_lower:
-                    folder_name = name
-                    break
-
-            # Если не определили - в "3. Местные" по умолчанию
-            if not folder_name:
-                folder_name = "3. Местные"
-
-            # Создаём папку, если ещё не создана
-            if folder_name not in folders:
-                folders[folder_name] = _add_folder(
-                    roads_folder, folder_name, "1")
-
-            # Добавляем дорогу
-            _add_road_placemark(folders[folder_name], row)
-
-        # Создаём недостающие пустые папки (для красоты)
-        all_needed_folders = ["1. Федеральные", "2. Региональные", "3. Местные",
-                              "4. Частные", "5. Лесные", "6. Ведомственные"]
-        for folder_name in all_needed_folders:
-            if folder_name not in folders:
-                _add_empty_folder(roads_folder, folder_name)
-
-        # Создаём папку "4. Точки интереса" (пока пустую, как заготовку)
-        poi_folder = _add_folder(top_folder, "4. Точки интереса", "1")
-        # Можно добавить пустую заглушку
-        _add_empty_folder(poi_folder, "Точки интереса")
-
-        # Сохраняем файл
-        tree = ET.ElementTree(kml)
-        tree.write(output_path, encoding='utf-8', xml_declaration=True)
-
-        logger.info(f"KML сохранён: {output_path}")
-        return True
-
-    except Exception as e:
-        logger.error(f"Ошибка сохранения KML: {e}")
-        return False
+    return _add_folder(parent, name)
 
 
 # ============================================================================
@@ -215,24 +253,17 @@ def save_to_kml(gdf, output_path, top_folder_name="СКДФ Дороги"):
 if __name__ == "__main__":
     import time
     import pandas as pd
-    from coord_utils import parse_coordinate, build_bbox, convert_bbox_to_skdf
-    from skdf_api import fetch_roads_raw, features_to_gdf, get_passport_id, get_road_characteristics, get_folder_name
     from shapely.geometry import box
     from datetime import datetime
 
     print("\n=== Тест kml_exporter.py ===\n")
 
-    # Ручной ввод координат
-    print("Введите северо-западную точку (широта, долгота):")
-    lat1, lon1 = parse_coordinate(input())
+    from skdf_api import fetch_roads_raw, features_to_gdf, get_passport_id, get_road_characteristics
 
-    print("Введите юго-восточную точку (широта, долгота):")
-    lat2, lon2 = parse_coordinate(input())
-
-    # Строим bbox
-    bbox_degrees = build_bbox((lat1, lon1), (lat2, lon2))
-    bbox_meters = convert_bbox_to_skdf(bbox_degrees)
-    print(f"Bbox (градусы): {bbox_degrees}")
+    # ===== ЖЁСТКИЕ КООРДИНАТЫ для теста =====
+    # Bbox в метрах (EPSG:3857)
+    bbox_meters = [5970482.543307837, 9237349.770030644,
+                   5979941.6263704365, 9244439.304687222]
     print(f"Bbox (метры): {bbox_meters}")
 
     total_start = time.time()
@@ -271,10 +302,10 @@ if __name__ == "__main__":
     print(
         f"Обогащение: {gdf['passport_id'].notna().sum()} / {len(gdf)} дорог за {time.time()-start:.1f} сек")
 
-    # 4. Сохраняем в KML (новая версия)
+    # 4. Сохраняем в KML
     start = time.time()
     output_file = f"roads_{datetime.now().strftime('%Y%m%d_%H%M%S')}.kml"
-    success = save_to_kml(gdf, output_file, top_folder_name="СКДФ Дороги")
+    success = save_to_kml(gdf, output_file, top_folder_name="Тестовый участок")
     print(f"Сохранение KML: {time.time()-start:.1f} сек")
 
     total_time = time.time() - total_start
