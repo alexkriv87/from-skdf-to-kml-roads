@@ -2,6 +2,7 @@
 # Модуль для экспорта GeoDataFrame в KML-файл (совместимый с SAS.Планет)
 
 from pathlib import Path
+from collections import defaultdict
 from logger_config import logger
 from config import COLORS_KML, LINE_WIDTH, DESCRIPTION_TEMPLATE
 
@@ -53,26 +54,19 @@ def _get_color(category):
 def _make_placemark(row, category):
     """
     Создаёт XML-строку Placemark для одной дороги.
-
-    Пример входа: row (с данными дороги), category = "федеральные"
-    Пример выхода: строка с XML Placemark
     """
-    # Конвертируем геометрию в строку координат
     geometry_deg = row.get('geometry_deg')
     coord_lines = []
 
     if geometry_deg is not None:
-        from shapely.geometry import mapping
-        geom_dict = mapping(geometry_deg)
-        geom_type = geom_dict.get('type')
-        coords = geom_dict.get('coordinates')
+        geom_type = geometry_deg.geom_type
 
         if geom_type == 'LineString':
-            for point in coords:
+            for point in geometry_deg.coords:
                 coord_lines.append(f"{point[0]},{point[1]},0")
         elif geom_type == 'MultiLineString':
-            for line in coords:
-                for point in line:
+            for line in geometry_deg.geoms:
+                for point in line.coords:
                     coord_lines.append(f"{point[0]},{point[1]},0")
 
     coordinates_str = ' '.join(coord_lines)
@@ -97,35 +91,24 @@ def save_to_kml(gdf, output_path, top_folder_name="СКДФ Дороги"):
     Ожидает, что в gdf есть колонка 'категория' с русскими значениями:
     федеральные, региональные, местные, частные, лесные, ведомственные.
     И колонка 'geometry_deg' с Shapely-геометрией в градусах (EPSG:4326).
-
-    Параметры:
-        gdf: GeoDataFrame с дорогами
-        output_path: полный путь к выходному файлу (.kml)
-        top_folder_name: имя верхней папки-обёртки
-
-    Возвращает:
-        bool: True при успехе, False при ошибке
     """
+    # Проверка наличия обязательных колонок
+    if 'категория' not in gdf.columns:
+        logger.error("Отсутствует колонка 'категория' в GeoDataFrame")
+        return False
+
     try:
-        # 1. Группируем дороги по категории и генерируем Placemark'и
-        roads_by_category = {
-            "федеральные": [],
-            "региональные": [],
-            "местные": [],
-            "частные": [],
-            "лесные": [],
-            "ведомственные": []
-        }
+        # 1. Группируем дороги по категории
+        roads_by_category = defaultdict(list)
 
         for idx, row in gdf.iterrows():
             category = row.get('категория')
-            if category and category in roads_by_category:
+            if category:
                 placemark = _make_placemark(row, category)
                 roads_by_category[category].append(placemark)
 
-        # 2. Формируем kwargs для format() (русский ключ → английский плейсхолдер)
-        #    Соответствие: федеральные → federal, региональные → regional и т.д.
-        placeholder_map = {
+        # 2. Маппинг русских категорий на английские плейсхолдеры
+        category_to_placeholder = {
             "федеральные": "federal",
             "региональные": "regional",
             "местные": "local",
@@ -134,15 +117,16 @@ def save_to_kml(gdf, output_path, top_folder_name="СКДФ Дороги"):
             "ведомственные": "departmental",
         }
 
+        # 3. Формируем kwargs для format()
         format_kwargs = {"top_folder_name": top_folder_name}
-        for russian_key, english_key in placeholder_map.items():
+        for russian_key, english_key in category_to_placeholder.items():
             format_kwargs[english_key] = '\n'.join(
                 roads_by_category.get(russian_key, []))
 
-        # 3. Заполняем шаблон
+        # 4. Заполняем шаблон
         kml_str = MAIN_TEMPLATE.format(**format_kwargs)
 
-        # 4. Сохраняем в файл
+        # 5. Сохраняем в файл
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(kml_str)
 
@@ -160,6 +144,7 @@ def save_to_kml(gdf, output_path, top_folder_name="СКДФ Дороги"):
 if __name__ == "__main__":
     import time
     import pandas as pd
+    import geopandas as gpd
     from shapely.geometry import box
     from datetime import datetime
 
@@ -210,8 +195,8 @@ if __name__ == "__main__":
 
     # 5. Конвертация геометрии в градусы
     start = time.time()
-    gdf_deg = gdf.to_crs("EPSG:4326")
-    gdf['geometry_deg'] = gdf_deg.geometry
+    gdf = gdf.to_crs("EPSG:4326")
+    gdf['geometry_deg'] = gdf.geometry
     print(f"Конвертация геометрии: {time.time()-start:.1f} сек")
 
     # 6. Сохраняем в KML
