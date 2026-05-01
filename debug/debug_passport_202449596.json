@@ -1,0 +1,184 @@
+{
+  "blocks": {
+    "region-zones": 1,
+    "agglomerations": 0,
+    "municipality-zones": 1,
+    "climate-zones": 1,
+    "humidification-zones": 1,
+    "operators": 1,
+    "backbones": 0,
+    "commissionings": 1,
+    "tolls": 0,
+    "overloaded": 0,
+    "dangers": 0,
+    "maintenance-conditions": 0,
+    "limitations": 0,
+    "protective-structures": 0,
+    "speed-limits": 1,
+    "stead-others": 0,
+    "stead": 0,
+    "axle-load": 1,
+    "capacity": 1,
+    "traffic": 1,
+    "gabarit": 0,
+    "clearances": 1,
+    "category": 1,
+    "class": 1,
+    "lanes": 1,
+    "roadway": 1,
+    "roadbed": 1,
+    "pavement": 2,
+    "right-of-ways": 0,
+    "norm-consistents": 2,
+    "crossing-communications": 0,
+    "crossing-roads": 0,
+    "crossing-railroads": 0,
+    "ramps": 0,
+    "lights": 0,
+    "lightings": 0,
+    "bus-stops": 0,
+    "sidewalks": 0,
+    "barrier-fences": 0,
+    "km-posts": 0,
+    "weight-controls": 0,
+    "cameras": 0,
+    "campings": 0,
+    "toll-points": 0,
+    "traffic-signs": 0,
+    "speed-change-lanes": 0,
+    "facilities": 0,
+    "gas-stations": 0,
+    "other-structures": 0,
+    "parkings": 0,
+    "service-stations": 0,
+    "service-areas": 0,
+    "rail-stations": 0,
+    "hotels": 0,
+    "hospitals": 0,
+    "mfz": 0,
+    "catering": 0,
+    "trade-points": 0,
+    "contact-points": 0,
+    "billboards": 0,
+    "bridges": 0,
+    "pipes": 0,
+    "los": 0,
+    "crosswalks": 0,
+    "stead-right-of-way": 0,
+    "galleries": 0,
+    "tunnels": 0,
+    "levees": 0,
+    "winter-roads": 0,
+    "ice-bridges": 0,
+    "key-settlements": 1,
+    "ferries": 0,
+    "parts": 1,
+    "road-documents": 2,
+    "tourist-routes": 0,
+    "traffic-management": 0,
+    "median-separations": 0
+  },
+  "data": {
+    "road_data_id": 1066820,
+    "passport_id": 202449596,
+    "road_id": 7872116,
+    "full_name": "Свободный - Таллали от перекрёстка ",
+    "road_number_full": "10430 ОП МГ-255",
+    "road_number_short": "255",
+    "permitted_use": {
+      "id": 83768,
+      "name": "Автомобильные дороги общего пользования"
+    },
+    "value_of_the_road": {
+      "id": 83719,
+      "name": "Автомобильные дороги местного значения"
+    },
+    "start": "0+000",
+    "finish": "7+740",
+    "length": 7.74,
+    "square": 46440,
+    "book_value": 1,
+    "residual_value": 1,
+    "region": [
+      {
+        "id": 25987,
+        "name": "Амурская область"
+      }
+    ],
+    "owner": [
+      {
+        "id": 2744745,
+        "name": "Администрация города Свободного",
+        "full_name": "Администрация города Свободного"
+      }
+    ],
+    "fias_lvl_3": null,
+    "fias_lvl_4": {
+      "id": 1406903,
+      "name": "г Свободный"
+    },
+    "fias_lvl_6": null,
+    "fias_lvl_65": null,
+    "municipality_formation": [
+      {
+        "id": 95238768,
+        "name": "г.о. город Свободный"
+      }
+    ],
+    "settlement": null,
+    "locality": null,
+    "planning_structure": null,
+    "backbones": 0,
+    "category": [
+      {
+        "id": 51850,
+        "name": "IV"
+      }
+    ],
+    "pavement_type": [
+      {
+        "id": 2043506,
+        "name": "Облегченные"
+      },
+      {
+        "id": 2043507,
+        "name": "Переходные"
+      }
+    ],
+    "pavement_kind": [
+      {
+        "id": 2043913,
+        "name": "Асфальтобетонные, в том числе, из холодных смесей"
+      },
+      {
+        "id": 2545757,
+        "name": "Щебеночно-гравийно-песчаные смеси"
+      }
+    ],
+    "class_of_road": [
+      {
+        "id": 1643178,
+        "name": "Обычная автомобильная дорога (нескоростная автомобильная дорога)"
+      }
+    ],
+    "lanes": [
+      2
+    ],
+    "climatic_zone": [
+      {
+        "id": 1663789,
+        "name": "II"
+      }
+    ],
+    "speed_limit": [
+      60
+    ],
+    "capacity": [
+      2000
+    ],
+    "traffic": [
+      2000
+    ]
+  },
+  "meta": null
+}

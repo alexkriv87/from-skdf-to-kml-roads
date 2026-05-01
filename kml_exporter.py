@@ -1,11 +1,13 @@
 # kml_exporter.py
 # Модуль для экспорта GeoDataFrame в KML-файл (совместимый с SAS.Планет)
+#
+# ВНИМАНИЕ: Функция save_to_kml() ожидает, что в gdf уже есть колонка 'geometry_deg'
+#          с геометрией в градусах (EPSG:4326) в формате списка линий.
+#          Подготовку данных (конвертацию) нужно выполнить ДО вызова save_to_kml().
 
 import xml.etree.ElementTree as ET
-from datetime import datetime
 from logger_config import logger
 from config import COLORS_KML, LINE_WIDTH, DESCRIPTION_TEMPLATE
-from geometry_funcs import convert_multilinestring
 
 
 # ============================================================================
@@ -17,7 +19,9 @@ def save_to_kml(gdf, output_path, top_folder_name="СКДФ Дороги"):
     Сохраняет GeoDataFrame в KML-файл (структура как у SAS.Планет).
 
     Параметры:
-        gdf: GeoDataFrame с дорогами (CRS: EPSG:3857)
+        gdf: GeoDataFrame с дорогами.
+             ДОЛЖЕН содержать колонку 'geometry_deg' с геометрией в градусах
+             в формате: список линий, каждая линия - список [lon, lat]
         output_path: полный путь к выходному файлу (.kml)
         top_folder_name: имя верхней папки-обёртки
 
@@ -44,7 +48,7 @@ def _build_kml_tree(gdf, top_folder_name):
     Строит ElementTree всей KML-структуры (без записи на диск).
 
     Параметры:
-        gdf: GeoDataFrame с дорогами
+        gdf: GeoDataFrame с дорогами (должен содержать колонку 'geometry_deg')
         top_folder_name: имя верхней папки-обёртки
 
     Возвращает:
@@ -91,10 +95,9 @@ def _build_kml_tree(gdf, top_folder_name):
 
         # Создаём папку, если ещё не создана
         if folder_name not in folders:
-            folders[folder_name] = _add_folder(
-                roads_folder, folder_name, "1")
+            folders[folder_name] = _add_folder(roads_folder, folder_name, "1")
 
-        # Добавляем дорогу
+        # Добавляем дорогу (geometry_deg уже есть в gdf)
         _add_road_placemark(folders[folder_name], row)
 
     # 7. Создаём недостающие пустые папки (для красоты)
@@ -182,9 +185,9 @@ def _add_road_placemark(parent, row):
     ET.SubElement(line_style, "color").text = color
     ET.SubElement(line_style, "width").text = str(LINE_WIDTH)
 
-    # Геометрия
-    _add_geometry(placemark, row.get('geometry'),
-                  row.get('road_name', 'неизвестной'))
+    # Геометрия (берём из подготовленной колонки geometry_deg)
+    geometry_deg = row.get('geometry_deg')
+    _add_geometry(placemark, geometry_deg, row.get('road_name', 'неизвестной'))
 
 
 def _build_description(row):
@@ -213,24 +216,25 @@ def _get_color_from_ownership(ownership):
         return COLORS_KML.get("style_unknown", "FF888888")
 
 
-def _add_geometry(placemark, geometry, road_name="неизвестной"):
+def _add_geometry(placemark, geometry_deg, road_name="неизвестной"):
     """
-    Добавляет геометрию (LineString) в Placemark.
+    Добавляет геометрию (уже в градусах) в Placemark.
+
+    Параметры:
+        placemark: элемент Placemark
+        geometry_deg: геометрия в градусах (список линий, каждая линия - список [lon, lat])
+        road_name: название дороги (для логов)
     """
-    if not geometry:
+    if not geometry_deg:
         return
 
     try:
-        from shapely.geometry import mapping
-        geom_dict = mapping(geometry)
-        coords_deg = convert_multilinestring(geom_dict)
-
         line_string = ET.SubElement(placemark, "LineString")
         ET.SubElement(line_string, "extrude").text = "1"
         coordinates = ET.SubElement(line_string, "coordinates")
 
         coord_lines = []
-        for line in coords_deg:
+        for line in geometry_deg:
             for point in line:
                 lon, lat = point
                 coord_lines.append(f"{lon},{lat},0")
@@ -239,7 +243,7 @@ def _add_geometry(placemark, geometry, road_name="неизвестной"):
 
     except Exception as e:
         logger.warning(
-            f"Ошибка конвертации геометрии для дороги {road_name}: {e}")
+            f"Ошибка добавления геометрии для дороги {road_name}: {e}")
 
 
 def _add_empty_folder(parent, name):
@@ -248,7 +252,7 @@ def _add_empty_folder(parent, name):
 
 
 # ============================================================================
-# ТЕСТОВЫЙ БЛОК
+# ТЕСТОВЫЙ БЛОК (имитация main.py)
 # ============================================================================
 if __name__ == "__main__":
     import time
@@ -259,9 +263,9 @@ if __name__ == "__main__":
     print("\n=== Тест kml_exporter.py ===\n")
 
     from skdf_api import fetch_roads_raw, features_to_gdf, get_passport_id, get_road_characteristics
+    from geometry_funcs import geometry_meters_to_degrees
 
     # ===== ЖЁСТКИЕ КООРДИНАТЫ для теста =====
-    # Bbox в метрах (EPSG:3857)
     bbox_meters = [5970482.543307837, 9237349.770030644,
                    5979941.6263704365, 9244439.304687222]
     print(f"Bbox (метры): {bbox_meters}")
@@ -286,13 +290,9 @@ if __name__ == "__main__":
     gdf['passport_id'] = gdf['road_id'].apply(get_passport_id)
     gdf['characteristics'] = gdf['passport_id'].apply(get_road_characteristics)
 
-    # Создаём DataFrame из характеристик
     chars_df = pd.DataFrame(gdf['characteristics'].to_list())
-
-    # Добавляем road_id в chars_df
     chars_df['road_id'] = gdf['road_id'].values
 
-    # Объединяем через merge
     gdf = pd.merge(
         gdf.drop(columns=['characteristics']),
         chars_df,
@@ -302,17 +302,20 @@ if __name__ == "__main__":
     print(
         f"Обогащение: {gdf['passport_id'].notna().sum()} / {len(gdf)} дорог за {time.time()-start:.1f} сек")
 
-    # 4. Сохраняем в KML
+    # 4. ПОДГОТОВКА ГЕОМЕТРИИ (конвертация метров → градусы)
+    start = time.time()
+    gdf['geometry_deg'] = gdf['geometry'].apply(geometry_meters_to_degrees)
+    print(f"Конвертация геометрии: {time.time()-start:.1f} сек")
+
+    # 5. Сохраняем в KML
     start = time.time()
     output_file = f"roads_{datetime.now().strftime('%Y%m%d_%H%M%S')}.kml"
-    success = save_to_kml(gdf, output_file, top_folder_name="Тестовый участок")
-    print(f"Сохранение KML: {time.time()-start:.1f} сек")
-
-    total_time = time.time() - total_start
-    print(f"\n✅ Общее время: {total_time:.1f} сек")
-
-    if success:
+    if save_to_kml(gdf, output_file, top_folder_name="Тестовый участок"):
         print(f"   KML файл: {output_file}")
         print(f"   Всего дорог: {len(gdf)}")
     else:
         print("   ❌ Ошибка сохранения KML")
+    print(f"Сохранение KML: {time.time()-start:.1f} сек")
+
+    total_time = time.time() - total_start
+    print(f"\n✅ Общее время: {total_time:.1f} сек")
