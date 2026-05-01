@@ -1,0 +1,71 @@
+<Folder>
+  <name>1. Федеральные</name>
+  <open>1</open>
+  <Style>
+    <ListStyle>
+      <listItemType>check</listItemType>
+      <bgColor>00ffffff</bgColor>
+    </ListStyle>
+  </Style>
+  {federal}
+</Folder>
+
+<Folder>
+  <name>2. Региональные</name>
+  <open>1</open>
+  <Style>
+    <ListStyle>
+      <listItemType>check</listItemType>
+      <bgColor>00ffffff</bgColor>
+    </ListStyle>
+  </Style>
+  {regional}
+</Folder>
+
+<Folder>
+  <name>3. Местные</name>
+  <open>1</open>
+  <Style>
+    <ListStyle>
+      <listItemType>check</listItemType>
+      <bgColor>00ffffff</bgColor>
+    </ListStyle>
+  </Style>
+  {local}
+</Folder>
+
+<Folder>
+  <name>4. Частные</name>
+  <open>1</open>
+  <Style>
+    <ListStyle>
+      <listItemType>check</listItemType>
+      <bgColor>00ffffff</bgColor>
+    </ListStyle>
+  </Style>
+  {private}
+</Folder>
+
+<Folder>
+  <name>5. Лесные</name>
+  <open>1</open>
+  <Style>
+    <ListStyle>
+      <listItemType>check</listItemType>
+      <bgColor>00ffffff</bgColor>
+    </ListStyle>
+  </Style>
+  {forest}
+</Folder>
+
+<Folder>
+  <name>6. Ведомственные</name>
+  <open>1</open>
+  <Style>
+    <ListStyle>
+      <listItemType>check</listItemType>
+      <bgColor>00ffffff</bgColor>
+    </ListStyle>
+  </Style>
+  {departmental}
+</Folder>
