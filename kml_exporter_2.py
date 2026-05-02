@@ -141,6 +141,7 @@ def save_to_kml(gdf, output_path, top_folder_name="СКДФ Дороги"):
 # ============================================================================
 # ТЕСТОВЫЙ БЛОК
 # ============================================================================
+
 if __name__ == "__main__":
     import time
     import pandas as pd
@@ -150,7 +151,12 @@ if __name__ == "__main__":
 
     print("\n=== Тест kml_exporter.py ===\n")
 
-    from skdf_api import fetch_roads_raw, features_to_gdf, get_passport_id, get_road_characteristics, get_category
+    from skdf_api import (
+        fetch_roads_raw, features_to_gdf, get_passport_id,
+        get_road_characteristics, get_category,
+        get_roadway_segments, get_roadway_widths_json,
+        format_widths, format_road_segments
+    )
 
     # ===== ЖЁСТКИЕ КООРДИНАТЫ для теста =====
     bbox_meters = [5970482.543307837, 9237349.770030644,
@@ -193,13 +199,30 @@ if __name__ == "__main__":
     gdf['категория'] = gdf['value_of_the_road'].apply(get_category)
     print(f"Категории: {gdf['категория'].unique()}")
 
-    # 5. Конвертация геометрии в градусы
+    # 5. Получаем ширину
+    print("\n5. Получение ширины...")
+    gdf['segment_passport_ids'] = gdf['passport_id'].apply(
+        get_roadway_segments)
+
+    def get_all_widths_json(segment_ids):
+        all_widths = []
+        for seg_id in segment_ids:
+            widths = get_roadway_widths_json(seg_id)
+            all_widths.extend(widths)
+        return all_widths
+
+    gdf['widths_json'] = gdf['segment_passport_ids'].apply(get_all_widths_json)
+    gdf['Ширина:'] = gdf['widths_json'].apply(format_widths)
+    gdf['Участки:'] = gdf['widths_json'].apply(format_road_segments)
+    print(f"   Ширина добавлена для {gdf['Ширина:'].notna().sum()} дорог")
+
+    # 6. Конвертация геометрии в градусы
     start = time.time()
     gdf = gdf.to_crs("EPSG:4326")
     gdf['geometry_deg'] = gdf.geometry
     print(f"Конвертация геометрии: {time.time()-start:.1f} сек")
 
-    # 6. Сохраняем в KML
+    # 7. Сохраняем в KML
     start = time.time()
     output_file = f"roads_{datetime.now().strftime('%Y%m%d_%H%M%S')}.kml"
     if save_to_kml(gdf, output_file, top_folder_name="Тестовый участок"):

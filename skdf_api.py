@@ -234,6 +234,124 @@ def get_category(value_of_the_road):
     raise ValueError(f"Неизвестная категория дороги: {value_of_the_road}")
 
 
+def get_roadway_segments(passport_id):
+    """
+    Получает список passport_id сегментов roadway для дороги.
+
+    Принимает: passport_id (int) - например, 201384581
+
+    Возвращает: list of int - список passport_id сегментов
+    """
+    url = f"{BASE_URL}/api/v3/portal/hwm/passports/roads/{passport_id}/roadway"
+    response = _make_request_with_retry('GET', url, headers=HEADERS_PASSPORT)
+
+    if not response or response.status_code != 200:
+        return []
+
+    data = response.json()
+    segments = data.get('data', [])
+
+    result = []
+    for seg in segments:
+        result.append(seg.get('passport_id'))
+
+    return result
+
+
+def get_roadway_widths_json(segment_passport_id):
+    """
+    Получает сырые данные по ширине для сегмента дороги.
+
+    Принимает: segment_passport_id (int) - из get_roadway_segments
+
+    Возвращает: list of dict - список участков (как есть из API)
+        Пример: [
+            {"id": 433435008, "start": "0+000", "finish": "7+740", 
+             "length": 7.74, "square": 46440.0, "roadway_width": 6.0}
+        ]
+    """
+    url = f"{BASE_URL}/api/v3/portal/hwm/passports/parts/{segment_passport_id}/roadway"
+    response = _make_request_with_retry('GET', url, headers=HEADERS_PASSPORT)
+
+    if not response or response.status_code != 200:
+        return []
+
+    data = response.json()
+    return data.get('data', [])
+
+
+def format_widths(widths_list):
+    """
+    Форматирует список участков с шириной в краткий диапазон.
+
+    Принимает: widths_list - список участков из API
+        Пример: [
+            {"start": "0+000", "finish": "7+740", "roadway_width": 6.0},
+            {"start": "10+000", "finish": "56+700", "roadway_width": 7.0}
+        ]
+
+    Возвращает: str - диапазон ширин
+        Примеры:
+            - Если все ширины одинаковые: "6,0"
+            - Если разные: "6,0-7,0"
+            - Если нет данных: ""
+    """
+    if not widths_list:
+        return ""
+
+    # Собираем все значения ширины
+    widths = []
+    for w in widths_list:
+        width = w.get('roadway_width')
+        if width is not None:
+            widths.append(width)
+
+    if not widths:
+        return ""
+
+    min_w = min(widths)
+    max_w = max(widths)
+
+    # Форматируем с запятой вместо точки
+    if min_w == max_w:
+        return f"{min_w:.1f}".replace('.', ',')
+    else:
+        return f"{min_w:.1f}-{max_w:.1f}".replace('.', ',')
+
+
+def format_road_segments(widths_list):
+    """
+    Форматирует список участков дороги в детальную многострочную строку.
+
+    Принимает: widths_list - список участков из API
+        Пример: [
+            {"start": "0+000", "finish": "7+740", "roadway_width": 6.0},
+            {"start": "10+000", "finish": "56+700", "roadway_width": 7.0}
+        ]
+
+    Возвращает: str - многострочная строка с перечислением участков
+        Пример: "Участки:\n1. 0+000 - 7+740 (6,0 м)\n2. 10+000 - 56+700 (7,0 м)"
+    """
+    if not widths_list:
+        return ""
+
+    lines = ["Участки:"]
+
+    for i, w in enumerate(widths_list, 1):
+        start = w.get('start', '?')
+        finish = w.get('finish', '?')
+        width = w.get('roadway_width')
+
+        if width is None:
+            width_str = "?"
+        else:
+            width_str = f"{width:.1f}".replace('.', ',')
+
+        lines.append(f"{i}. {start} - {finish} ({width_str} м)")
+
+    return '\n'.join(lines)
+
+
 # ============================================================================
 # ТЕСТОВЫЙ БЛОК
 # ============================================================================
@@ -287,11 +405,34 @@ if __name__ == "__main__":
     gdf['Значение автомобильной дороги'] = gdf['value_of_the_road'].apply(
         get_category)
 
-    # 5. Выводим результат
-    print("\n4. Результат:")
-    cols = ['road_name', 'Значение автомобильной дороги',
-            'Категория:']
-    existing_cols = [c for c in cols if c in gdf.columns]
-    print(gdf[existing_cols].head().to_string())
-    print(
-        f"\n✅ Итоговый GeoDataFrame: {len(gdf)} дорог, колонки: {list(gdf.columns)}")
+    # 5. Получаем сегменты для каждой дороги
+    print("\n5. Получение сегментов roadway...")
+    gdf['segment_passport_ids'] = gdf['passport_id'].apply(
+        get_roadway_segments)
+
+    # 6. Получаем сырой JSON с шириной для каждого сегмента
+    print("\n6. Получение данных о ширине...")
+
+    def get_all_widths_json(segment_ids):
+        all_widths = []
+        for seg_id in segment_ids:
+            widths = get_roadway_widths_json(seg_id)
+            all_widths.extend(widths)
+        return all_widths
+
+    gdf['widths_json'] = gdf['segment_passport_ids'].apply(get_all_widths_json)
+
+    # 7. Форматируем ширину в краткий диапазон
+    print("\n7. Форматирование ширины...")
+    gdf['Ширина:'] = gdf['widths_json'].apply(format_widths)
+
+    # 8. Форматируем участки дороги
+    print("\n8. Форматирование участков...")
+    gdf['Участки:'] = gdf['widths_json'].apply(format_road_segments)
+
+    # 9. Выводим результат
+    print("\n9. Результат:")
+    cols = ['road_id', 'road_name', 'Ширина:', 'Участки:']
+    print(gdf[cols].to_string())
+
+    print(f"\n✅ Итоговый GeoDataFrame: {len(gdf)} дорог")
