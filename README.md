@@ -59,3 +59,40 @@
         собрать все df в список
 4. Объединить все df → один большой DataFrame
 5. Создать gdf_km_posts (точки)
+
+
+flowchart TD
+    ROAD[road_id = 89790]
+    
+    ROAD -->|get_passport_id| PASSPORT[passport_id = 201384581<br/>основной паспорт дороги]
+    
+    PASSPORT -->|GET /roads/.../roadway| SEG_ROADWAY[СЕГМЕНТЫ ROADWAY]
+    PASSPORT -->|GET /roads/.../axle-load| SEG_AXLE[СЕГМЕНТЫ AXLE-LOAD]
+    
+    SEG_ROADWAY -->|440666760| W1
+    SEG_ROADWAY -->|440788206| W2
+    SEG_ROADWAY -->|440452087| W3
+    SEG_ROADWAY -->|...| W4
+    
+    SEG_AXLE -->|440666760| A1
+    SEG_AXLE -->|440788206| A2
+    SEG_AXLE -->|440452087| A3
+    SEG_AXLE -->|...| A4
+    
+    W1 -->|GET /parts/440666760/roadway| UW[УЧАСТКИ ШИРИНЫ]
+    W2 --> UW
+    W3 --> UW
+    
+    A1 -->|GET /parts/440666760/axle-load| UA[УЧАСТКИ НАГРУЗКИ]
+    A2 --> UA
+    A3 --> UA
+    
+    UW --> R1[1752+104 - 2093+300: 7м]
+    UW --> R2[2093+300 - 2101+351: 7.5м]
+    UW --> R3[741+775 - 1752+104: 7м]
+    UW --> R4[...]
+    
+    UA --> L1[1752+104 - 1817+000: 10т]
+    UA --> L2[1817+000 - 1820+325: 11.5т]
+    UA --> L3[1820+325 - 1820+491: 10т]
+    UA --> L4[...]

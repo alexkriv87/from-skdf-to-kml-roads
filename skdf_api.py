@@ -234,9 +234,9 @@ def get_category(value_of_the_road):
     raise ValueError(f"Неизвестная категория дороги: {value_of_the_road}")
 
 
-def get_roadway_segments(passport_id):
+def get_roadway_width_segments(passport_id):
     """
-    Получает список passport_id сегментов roadway для дороги.
+    Получает список passport_id сегментов для дороги для получения ширины.
 
     Принимает: passport_id (int) - например, 201384581
 
@@ -262,7 +262,7 @@ def get_roadway_widths_json(segment_passport_id):
     """
     Получает сырые данные по ширине для сегмента дороги.
 
-    Принимает: segment_passport_id (int) - из get_roadway_segments
+    segment_passport_id (int) - из get_roadway_width_segments
 
     Возвращает: list of dict - список участков (как есть из API)
         Пример: [
@@ -280,7 +280,7 @@ def get_roadway_widths_json(segment_passport_id):
     return data.get('data', [])
 
 
-def format_widths(widths_list):
+def format_widths_segments(widths_list):
     """
     Форматирует список участков с шириной в краткий диапазон.
 
@@ -319,7 +319,7 @@ def format_widths(widths_list):
         return f"{min_w:.1f}-{max_w:.1f}".replace('.', ',')
 
 
-def format_road_segments(widths_list):
+def format_road_widths(widths_list):
     """
     Форматирует список участков дороги в детальную многострочную строку.
 
@@ -335,7 +335,7 @@ def format_road_segments(widths_list):
     if not widths_list:
         return ""
 
-    lines = ["Участки:"]
+    lines = ['\n']
     for i, w in enumerate(widths_list, 1):
         start = w.get('start', '?')
         finish = w.get('finish', '?')
@@ -347,6 +347,135 @@ def format_road_segments(widths_list):
             width_str = f"{width:.1f}".replace('.', ',')
 
         lines.append(f"{i}. {start} - {finish} ({width_str} м)")
+
+    return '\n'.join(lines)
+
+
+def get_axle_load_segments(passport_id):
+    """
+    Получает список passport_id сегментов для дороги для получения осевой нагрузки.
+
+    Принимает: passport_id (int) - например, 201384581
+
+    Возвращает: list of int - список passport_id сегментов
+    """
+    url = f"{BASE_URL}/api/v3/portal/hwm/passports/roads/{passport_id}/axle-load"
+    response = _make_request_with_retry('GET', url, headers=HEADERS_PASSPORT)
+
+    if not response or response.status_code != 200:
+        return []
+
+    data = response.json()
+    segments = data.get('data', [])
+
+    result = []
+    for seg in segments:
+        result.append(seg.get('passport_id'))
+
+    return result
+
+
+def get_axle_loads_json(segment_passport_id):
+    """
+    Получает сырые данные по осевой нагрузке для сегмента дороги.
+
+    segment_passport_id (int) - из get_axle_load_segments
+
+    Возвращает: list of dict - список участков (как есть из API)
+        Пример: [
+            {
+                "id": 442765135,
+                "start": "20+367",
+                "finish": "23+203",
+                "os": {"id": 1553214, "name": 11.5},
+                "length": 2.836
+            },
+            ...
+        ]
+    """
+    url = f"{BASE_URL}/api/v3/portal/hwm/passports/parts/{segment_passport_id}/axle-load"
+    response = _make_request_with_retry('GET', url, headers=HEADERS_PASSPORT)
+
+    if not response or response.status_code != 200:
+        return []
+
+    data = response.json()
+    return data.get('data', [])
+
+
+def format_axle_load(loads_list):
+    """
+    Форматирует список участков с осевой нагрузкой в краткий диапазон.
+
+    Принимает: loads_list - список участков из API (из get_axle_loads_json)
+        Пример: [
+            {"start": "20+367", "finish": "23+203", "os": {"name": 11.5}},
+            {"start": "23+203", "finish": "51+000", "os": {"name": 11.5}},
+            {"start": "51+000", "finish": "51+663", "os": {"name": 10}}
+        ]
+
+    Возвращает: str - диапазон нагрузок
+        Примеры:
+            - Если все нагрузки одинаковые: "11,5"
+            - Если разные: "10,0-11,5"
+            - Если нет данных: ""
+    """
+    if not loads_list:
+        return ""
+
+    # Собираем все значения нагрузки
+    loads = []
+    for item in loads_list:
+        os = item.get('os')
+        if os and 'name' in os:
+            try:
+                loads.append(float(os['name']))
+            except (ValueError, TypeError):
+                pass
+
+    if not loads:
+        return ""
+
+    min_l = min(loads)
+    max_l = max(loads)
+
+    # Форматируем с запятой вместо точки
+    if min_l == max_l:
+        return f"{min_l:.1f}".replace('.', ',')
+    else:
+        return f"{min_l:.1f}-{max_l:.1f}".replace('.', ',')
+
+
+def format_axle_load_segments(loads_list):
+    """
+    Форматирует список участков с осевой нагрузкой в детальную многострочную строку.
+
+    Принимает: loads_list - список участков из API (из get_axle_loads_json)
+        Пример: [
+            {"start": "20+367", "finish": "23+203", "os": {"name": 11.5}},
+            {"start": "23+203", "finish": "51+000", "os": {"name": 11.5}},
+            {"start": "51+000", "finish": "51+663", "os": {"name": 10}}
+        ]
+
+    Возвращает: str - многострочная строка с перечислением участков
+        Пример: "1. 20+367 - 23+203 (11,5 т)\n2. 23+203 - 51+000 (11,5 т)\n3. 51+000 - 51+663 (10,0 т)"
+    """
+    if not loads_list:
+        return ""
+
+    lines = ['\n']
+    for i, item in enumerate(loads_list, 1):
+        start = item.get('start', '?')
+        finish = item.get('finish', '?')
+
+        os = item.get('os')
+        if os and 'name' in os:
+            load_value = float(os['name'])
+            load_str = f"{load_value:.1f}".replace('.', ',')
+        else:
+            load_str = "?"
+
+        lines.append(f"{i}. {start} - {finish} ({load_str} т)")
 
     return '\n'.join(lines)
 
@@ -406,75 +535,3 @@ def get_km_posts_raw(part_id):
             break
 
     return all_posts
-
-
-# ============================================================================
-# ТЕСТОВЫЙ БЛОК (имитация main.py)
-# ============================================================================
-if __name__ == "__main__":
-    import time
-    import pandas as pd
-    import geopandas as gpd
-    from shapely.geometry import box
-    from coord_utils import build_bbox, convert_bbox_to_skdf
-
-    print("\n=== Тест skdf_api.py (имитация main.py) ===\n")
-
-    # ===== ЖЁСТКИЕ КООРДИНАТЫ для теста =====
-    lat1, lon1 = 51.57265666666667, 128.18730294444444   # северо-запад
-    lat2, lon2 = 51.48442825, 128.40428294444445        # юго-восток
-    print(f"Тестовые координаты: NW({lat1}, {lon1}), SE({lat2}, {lon2})")
-
-    # Строим bbox
-    bbox_degrees = build_bbox((lat1, lon1), (lat2, lon2))
-    bbox_meters = convert_bbox_to_skdf(bbox_degrees)
-    print(f"Bbox: {bbox_degrees} -> {bbox_meters}")
-
-    # 1. Загружаем дороги
-    print("\n1. Загрузка дорог из СКДФ...")
-    features = fetch_roads_raw(bbox_meters, zoom=14)
-    gdf = features_to_gdf(features)
-    print(f"   Загружено: {len(gdf)} дорог")
-
-    # 2. Фильтрация по bbox
-    print("\n2. Фильтрация по bbox...")
-    search_bbox = box(*bbox_meters)
-    gdf = gdf[gdf['geometry'].apply(
-        lambda geom: geom.intersects(search_bbox))].copy()
-    print(f"   После фильтрации: {len(gdf)} дорог")
-
-    # 3. Добавляем категорию
-    gdf['категория'] = gdf['value_of_the_road'].apply(get_category)
-    print(f"   Категории: {gdf['категория'].unique()}")
-
-    # 4. Получаем passport_id для всех дорог
-    print("\n4. Получение passport_id...")
-    gdf['passport_id'] = gdf['road_id'].apply(get_passport_id)
-    print(
-        f"   passport_id получен для {gdf['passport_id'].notna().sum()} дорог")
-
-    # 5. Получаем ширину
-    print("\n5. Получение ширины...")
-    gdf['segment_passport_ids'] = gdf['passport_id'].apply(
-        get_roadway_segments)
-
-    def get_all_widths_json(segment_ids):
-        all_widths = []
-        for seg_id in segment_ids:
-            widths = get_roadway_widths_json(seg_id)
-            all_widths.extend(widths)
-        return all_widths
-
-    gdf['widths_json'] = gdf['segment_passport_ids'].apply(get_all_widths_json)
-    gdf['Ширина:'] = gdf['widths_json'].apply(format_widths)
-    gdf['Участки:'] = gdf['widths_json'].apply(format_road_segments)
-
-    # ========== ПЕЧАТАЕМ ВСЕ СТРОКИ УЧАСТКОВ ==========
-    print("\n=== ВСЕ ЗНАЧЕНИЯ 'Участки:' В GDF ===")
-    for idx, value in gdf['Участки:'].items():
-        print(f"Строка {idx}:")
-        print(repr(value))
-        print("-" * 50)
-    # ===============================================
-
-    print(f"   Ширина добавлена для {gdf['Ширина:'].notna().sum()} дорог")
