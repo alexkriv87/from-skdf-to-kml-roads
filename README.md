@@ -43,3 +43,19 @@
 - [ ] Написать модуль для экспорта в KML (`kml_exporter.py`)
 - [ ] Написать основной скрипт (`main.py`)
 - [ ] Протестировать на реальных данных
+
+
+
+работа с км столбами:
+1. Загрузить дороги → gdf
+2. Отфильтровать федеральные → gdf_federal
+3. Для каждой федеральной дороги:
+   - Получить segment_passport_ids
+   - Для каждого segment_id:
+        posts_raw = get_km_posts_raw(seg_id)
+        df = parse_km_posts_to_df(posts_raw)
+        df['road_id'] = road_id
+        df['road_name'] = road_name
+        собрать все df в список
+4. Объединить все df → один большой DataFrame
+5. Создать gdf_km_posts (точки)

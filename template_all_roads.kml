@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://earth.google.com/kml/2.2">
   <Document>
+    <!-- ОСНОВНАЯ ПАПКА-ОБЁРТКА -->
     <Folder>
       <name>{top_folder_name}</name>
       <open>1</open>
@@ -11,6 +12,7 @@
         </ListStyle>
       </Style>
 
+      <!-- ПАПКА "1. ДОРОГИ" -->
       <Folder>
         <name>1. Дороги</name>
         <open>1</open>
@@ -21,6 +23,7 @@
           </ListStyle>
         </Style>
 
+        <!-- 1. ФЕДЕРАЛЬНЫЕ -->
         <Folder>
           <name>1. Федеральные</name>
           <open>1</open>
@@ -33,6 +36,7 @@
           {federal}
         </Folder>
 
+        <!-- 2. РЕГИОНАЛЬНЫЕ -->
         <Folder>
           <name>2. Региональные</name>
           <open>1</open>
@@ -45,6 +49,7 @@
           {regional}
         </Folder>
 
+        <!-- 3. МЕСТНЫЕ -->
         <Folder>
           <name>3. Местные</name>
           <open>1</open>
@@ -57,6 +62,7 @@
           {local}
         </Folder>
 
+        <!-- 4. ЧАСТНЫЕ -->
         <Folder>
           <name>4. Частные</name>
           <open>1</open>
@@ -69,6 +75,7 @@
           {private}
         </Folder>
 
+        <!-- 5. ЛЕСНЫЕ -->
         <Folder>
           <name>5. Лесные</name>
           <open>1</open>
@@ -81,6 +88,7 @@
           {forest}
         </Folder>
 
+        <!-- 6. ВЕДОМСТВЕННЫЕ -->
         <Folder>
           <name>6. Ведомственные</name>
           <open>1</open>
@@ -93,8 +101,22 @@
           {departmental}
         </Folder>
 
+      </Folder>  <!-- закрывает "1. Дороги" -->
+
+      <!-- ПАПКА "2. КИЛОМЕТРОВЫЕ СТОЛБЫ" -->
+      <Folder>
+        <name>2. Километровые столбы</name>
+        <open>1</open>
+        <Style>
+          <ListStyle>
+            <listItemType>check</listItemType>
+            <bgColor>00ffffff</bgColor>
+          </ListStyle>
+        </Style>
+        {km_posts}
       </Folder>
 
+      <!-- ПАПКА "4. ТОЧКИ ИНТЕРЕСА" (ЗАГОТОВКА) -->
       <Folder>
         <name>4. Точки интереса</name>
         <open>1</open>
@@ -116,6 +138,6 @@
         </Folder>
       </Folder>
 
-    </Folder>
+    </Folder>  <!-- закрывает основную папку-обёртку -->
   </Document>
 </kml>

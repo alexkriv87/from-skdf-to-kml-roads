@@ -330,13 +330,12 @@ def format_road_segments(widths_list):
         ]
 
     Возвращает: str - многострочная строка с перечислением участков
-        Пример: "Участки:\n1. 0+000 - 7+740 (6,0 м)\n2. 10+000 - 56+700 (7,0 м)"
+        Пример: "1. 0+000 - 7+740 (6,0 м)\n2. 10+000 - 56+700 (7,0 м)"
     """
     if not widths_list:
         return ""
 
     lines = ["Участки:"]
-
     for i, w in enumerate(widths_list, 1):
         start = w.get('start', '?')
         finish = w.get('finish', '?')
@@ -454,73 +453,28 @@ if __name__ == "__main__":
     print(
         f"   passport_id получен для {gdf['passport_id'].notna().sum()} дорог")
 
-    # 5. Получаем сегменты для всех дорог (нужно для ширины и столбов)
-    print("\n5. Получение сегментов roadway...")
+    # 5. Получаем ширину
+    print("\n5. Получение ширины...")
     gdf['segment_passport_ids'] = gdf['passport_id'].apply(
         get_roadway_segments)
-    print(f"   Сегменты получены")
 
-    # 6. Получаем километровые столбы для федеральных дорог
-    print("\n6. Получение километровых столбов...")
+    def get_all_widths_json(segment_ids):
+        all_widths = []
+        for seg_id in segment_ids:
+            widths = get_roadway_widths_json(seg_id)
+            all_widths.extend(widths)
+        return all_widths
 
-    # Фильтруем федеральные дороги
-    gdf_federal = gdf[gdf['категория'] == 'федеральные'].copy()
-    print(f"   Федеральных дорог: {len(gdf_federal)}")
+    gdf['widths_json'] = gdf['segment_passport_ids'].apply(get_all_widths_json)
+    gdf['Ширина:'] = gdf['widths_json'].apply(format_widths)
+    gdf['Участки:'] = gdf['widths_json'].apply(format_road_segments)
 
-    gdf_km_posts = None
+    # ========== ПЕЧАТАЕМ ВСЕ СТРОКИ УЧАСТКОВ ==========
+    print("\n=== ВСЕ ЗНАЧЕНИЯ 'Участки:' В GDF ===")
+    for idx, value in gdf['Участки:'].items():
+        print(f"Строка {idx}:")
+        print(repr(value))
+        print("-" * 50)
+    # ===============================================
 
-    if len(gdf_federal) > 0:
-        def get_km_posts_for_segments(seg_ids):
-            all_posts = []
-            for seg_id in seg_ids:
-                posts = get_km_posts_raw(seg_id)
-                all_posts.extend(posts)
-            return all_posts
-
-        gdf_federal['km_posts_raw'] = gdf_federal['segment_passport_ids'].apply(
-            get_km_posts_for_segments)
-
-        # Собираем все столбы в отдельный список
-        km_posts_list = []
-        for idx, row in gdf_federal.iterrows():
-            for post in row['km_posts_raw']:
-                km_posts_list.append({
-                    'road_id': row['road_id'],
-                    'road_name': row['road_name'],
-                    'number': post.get('number'),
-                    'location': post.get('location'),
-                    'latitude': post.get('latitude'),
-                    'longitude': post.get('longitude'),
-                })
-
-        # Создаём GeoDataFrame с точками
-        if km_posts_list:
-            gdf_km_posts = gpd.GeoDataFrame(
-                km_posts_list,
-                geometry=gpd.points_from_xy(
-                    [p['longitude'] for p in km_posts_list],
-                    [p['latitude'] for p in km_posts_list]
-                ),
-                crs="EPSG:4326"
-            )
-            print(f"   Всего километровых столбов: {len(gdf_km_posts)}")
-            if len(gdf_km_posts) > 0:
-                print(
-                    f"   Пример столба: {gdf_km_posts[['road_name', 'number', 'location']].iloc[0].to_dict()}")
-        else:
-            print("   Столбы не найдены")
-    else:
-        print("   Нет федеральных дорог, столбы не получены")
-
-    # 7. Выводим итоговую информацию
-    print("\n7. ИТОГИ:")
-    print(f"   Дорог всего: {len(gdf)}")
-    print(f"   Колонки в gdf: {list(gdf.columns)}")
-
-    if gdf_km_posts is not None and len(gdf_km_posts) > 0:
-        print(f"   Километровых столбов: {len(gdf_km_posts)}")
-        print(f"   Колонки в gdf_km_posts: {list(gdf_km_posts.columns)}")
-    else:
-        print("   Километровые столбы: не получены")
-
-    print(f"\n✅ Тест завершён")
+    print(f"   Ширина добавлена для {gdf['Ширина:'].notna().sum()} дорог")
