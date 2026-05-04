@@ -31,7 +31,9 @@ def _load_template(template_name):
         return f.read()
 
 
-PLACEMARK_TEMPLATE = _load_template("template_road_placemark.kml")
+PLACEMARK_LINE_TEMPLATE = _load_template("template_road_placemark.kml")
+PLACEMARK_MULTILINE_TEMPLATE = _load_template(
+    "template_road_placemark_multiline.kml")
 MAIN_TEMPLATE = _load_template("template_all_roads.kml")
 
 

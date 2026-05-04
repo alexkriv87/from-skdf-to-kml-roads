@@ -1,0 +1,14 @@
+<!-- ОДНА ДОРОГА (Placemark) ДЛЯ MultiLineString -->
+<Placemark>
+  <name>{name}</name>                     <!-- плейсхолдер: название дороги -->
+  <description>{description}</description> <!-- плейсхолдер: описание дороги -->
+  <Style>
+    <LineStyle>
+      <color>{color}</color>              <!-- плейсхолдер: цвет линии -->
+      <width>{width}</width>              <!-- плейсхолдер: толщина линии -->
+    </LineStyle>
+  </Style>
+  <MultiGeometry>
+    {line_strings}                        <!-- плейсхолдер: список LineString -->
+  </MultiGeometry>
+</Placemark>
