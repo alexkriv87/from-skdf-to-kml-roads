@@ -58,15 +58,9 @@ SAS.Планет	N51°43'15.9790" E121°07'42.0984"
 Зависимости
 
 Python ≥ 3.9
-
-geopandas
-
-pandas
-
-shapely
-
-pyproj
-
-requests
-
-tkinter (встроен в Python)
+- geopandas
+- pandas
+- shapely
+- pyproj
+- requests
+- tkinter (встроен в Python)
