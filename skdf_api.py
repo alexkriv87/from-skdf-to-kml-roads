@@ -17,6 +17,13 @@ from config import (
     HEADERS_GEO, HEADERS_PASSPORT, CATEGORY_MAPPING
 )
 
+# Счётчик запросов к API
+_request_counter = 0
+
+
+def get_counter():
+    return _request_counter
+
 
 def _make_request_with_retry(method, url, **kwargs):
     """
@@ -32,6 +39,8 @@ def _make_request_with_retry(method, url, **kwargs):
                     url, timeout=REQUEST_TIMEOUT, **kwargs)
 
             if response.status_code == 200:
+                global _request_counter
+                _request_counter += 1
                 return response
             else:
                 logger.warning(
